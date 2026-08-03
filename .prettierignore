@@ -1,0 +1,11 @@
+node_modules
+dist
+build
+coverage
+pnpm-lock.yaml
+apps/server/drizzle
+
+# Документы — проза, а не код. Prettier переставляет в них таблицы и ломает
+# вложенные блоки внутри списков; пользы от этого нет, риск есть.
+docs
+

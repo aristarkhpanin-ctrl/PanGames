@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // Ни DOM, ни Node: чистота ядра симуляции обеспечивается на уровне типов,
+    // а не только договорённостями. Попытка обратиться к window или process не скомпилируется.
+    "lib": ["ES2022"],
+    "types": [],
+    "noEmit": true
+  },
+  "include": ["src/**/*"]
+}

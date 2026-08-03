@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: gavan-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: gavan
+      POSTGRES_PASSWORD: gavan
+      POSTGRES_DB: gavan
+    ports:
+      - '5432:5432'
+    volumes:
+      - gavan-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U gavan -d gavan']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  gavan-pgdata:

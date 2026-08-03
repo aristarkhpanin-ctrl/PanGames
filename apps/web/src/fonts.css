@@ -1,0 +1,23 @@
+/*
+ * Шрифты идут в бандл, а не с CDN (§1 ТЗ: ассетов мало, класть их в CDN незачем).
+ * Подключаем только нужные подмножества и начертания: кириллица обязательна,
+ * латиница нужна ради цифр и латинских названий.
+ *
+ * Unbounded  — только заголовки глав, экран загрузки, названия праздников. Скупо и крупно.
+ * Golos Text — вся навигация, панели, подписи, числа.
+ * Caveat     — только дневник. Это его подпись, больше нигде он не появляется.
+ */
+
+/* Дисплейный, 500 */
+@import '@fontsource/unbounded/cyrillic-500.css';
+@import '@fontsource/unbounded/latin-500.css';
+
+/* Интерфейсный, 400 и 500 */
+@import '@fontsource/golos-text/cyrillic-400.css';
+@import '@fontsource/golos-text/latin-400.css';
+@import '@fontsource/golos-text/cyrillic-500.css';
+@import '@fontsource/golos-text/latin-500.css';
+
+/* Рукописный для дневника, 400 */
+@import '@fontsource/caveat/cyrillic-400.css';
+@import '@fontsource/caveat/latin-400.css';

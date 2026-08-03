@@ -1,0 +1,8 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+
+# pnpm 10 не запускает postinstall-скрипты зависимостей без явного разрешения.
+onlyBuiltDependencies:
+  - esbuild
+  - unrs-resolver
