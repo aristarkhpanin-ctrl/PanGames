@@ -20,3 +20,4 @@ export * from './worldgen/shape';
 export * from './worldgen/biomes';
 export * from './worldgen/scatter';
 export * from './worldgen/island';
+export * from './mesh/greedy';

@@ -1,4 +1,4 @@
-import { angleDistance, clamp, smoothstep } from '../math';
+import { clamp, smoothstep } from '../math';
 import { columnIndex, MAX_LAND_HEIGHT, WORLD_COLUMN_COUNT, WORLD_X, WORLD_Z } from '../voxels';
 import { createNoise2D, fbm2 } from './noise';
 import { createRng, deriveSeed } from './rng';
@@ -61,6 +61,15 @@ export function generateShape(seed: number): IslandShape {
   // Отводим их подальше от бухты, чтобы у воды было где причалить.
   const rockAngle = bayAngle + Math.PI + rng.range(-0.6, 0.6);
 
+  // Скала — вершина в конкретной точке, а не поднятый сектор. Сектор давал ровное плато
+  // во всю ширину острова: серую площадку вместо утёса, который видно с моря.
+  const peakDistance = ISLAND_RADIUS * rng.range(0.38, 0.5);
+  const peak = {
+    x: CENTER_X + Math.cos(rockAngle) * peakDistance,
+    z: CENTER_Z + Math.sin(rockAngle) * peakDistance,
+    radius: ISLAND_RADIUS * rng.range(0.26, 0.34),
+  };
+
   const landValue = buildLandValue(coastNoise, bay);
   const land = thresholdToTargetArea(landValue);
   keepLargestLandmass(land);
@@ -76,7 +85,7 @@ export function generateShape(seed: number): IslandShape {
     distToWater,
     distToLand,
     heightNoise,
-    rockAngle,
+    peak,
   );
 
   return {
@@ -289,7 +298,7 @@ function buildElevation(
   distToWater: Int16Array,
   distToLand: Int16Array,
   heightNoise: ReturnType<typeof createNoise2D>,
-  rockAngle: number,
+  peak: { x: number; z: number; radius: number },
 ): { landHeight: Uint8Array; waterDepth: Uint8Array; landCells: number } {
   const landHeight = new Uint8Array(WORLD_COLUMN_COUNT);
   const waterDepth = new Uint8Array(WORLD_COLUMN_COUNT);
@@ -306,11 +315,13 @@ function buildElevation(
         // Чем дальше от воды, тем выше: у воды получается пляж, а не обрыв.
         const inland = smoothstep(0, 16, distToWater[index] ?? 0);
 
-        const angle = Math.atan2(z - CENTER_Z, x - CENTER_X);
-        const inRockSector = 1 - smoothstep(0.35, 0.95, angleDistance(angle, rockAngle));
+        // Луг остаётся пологим: по нему ходят, на нём строят, и рельеф не должен мешать.
+        const meadow = inland * (2 + 5 * noise);
 
-        const meadow = inland * (3 + 9 * noise);
-        const rocks = inRockSector * inland * (2 + 10 * noise);
+        // Скала растёт к одной вершине и круто обрывается — так она читается силуэтом.
+        const toPeak = Math.hypot(x - peak.x, z - peak.z);
+        const rise = 1 - smoothstep(0, peak.radius, toPeak);
+        const rocks = rise * rise * inland * (5 + 13 * noise);
 
         landHeight[index] = clamp(Math.round(1 + meadow + rocks), 1, MAX_LAND_HEIGHT);
       } else {

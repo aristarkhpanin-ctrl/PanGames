@@ -61,12 +61,23 @@ const NODE_SPEC: Record<
   fish: { count: 3, capacity: 60, regenPerDay: 60, spacing: 8 },
 };
 
-/** Вероятность дерева в клетке по биому. Роща — густая, луг — редкие одиночки. */
+/**
+ * Вероятность дерева в клетке по биому. Роща — густая, луг — редкие одиночки.
+ *
+ * Числа занижены осознанно: при вчетверо большей плотности кроны смыкались в сплошной
+ * тёмный ковёр, и остров переставал читаться. Между деревьями должна быть видна земля.
+ */
 const TREE_CHANCE: Partial<Record<number, number>> = {
-  [Biome.GROVE]: 0.42,
-  [Biome.MEADOW]: 0.05,
-  [Biome.BEACH]: 0.04,
+  [Biome.GROVE]: 0.2,
+  [Biome.MEADOW]: 0.03,
+  [Biome.BEACH]: 0.03,
 };
+
+/**
+ * Свободных клеток вокруг дерева. Крона шире двух метров, то есть четырёх вокселей,
+ * поэтому при меньшем расстоянии деревья срастаются в сплошной полог и остров пропадает.
+ */
+const TREE_SPACING = 3;
 
 export function scatterTrees(shape: IslandShape, biomes: Uint8Array, seed: number): TreeInstance[] {
   const rng = createRng(deriveSeed(seed, 'trees'));
@@ -284,8 +295,8 @@ function isOccupied(occupied: Uint8Array, x: number, z: number): boolean {
 
 /** Резервирует клетку и её соседей: деревья не должны срастаться в сплошную стену. */
 function markOccupied(occupied: Uint8Array, x: number, z: number): void {
-  for (let dz = -1; dz <= 1; dz += 1) {
-    for (let dx = -1; dx <= 1; dx += 1) {
+  for (let dz = -TREE_SPACING; dz <= TREE_SPACING; dz += 1) {
+    for (let dx = -TREE_SPACING; dx <= TREE_SPACING; dx += 1) {
       const nx = x + dx;
       const nz = z + dz;
       if (nx < 0 || nx >= WORLD_X || nz < 0 || nz >= WORLD_Z) continue;

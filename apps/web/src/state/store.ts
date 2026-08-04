@@ -10,11 +10,18 @@ export type ServerStatus = 'unknown' | 'online' | 'unreachable';
 interface GameState {
   serverStatus: ServerStatus;
   setServerStatus: (status: ServerStatus) => void;
+  /** Остров сгенерирован и все чанки отрисованы. */
+  worldReady: boolean;
+  setWorldReady: (ready: boolean) => void;
 }
 
 export const useGameStore = create<GameState>()((set) => ({
   serverStatus: 'unknown',
   setServerStatus: (serverStatus) => {
     set({ serverStatus });
+  },
+  worldReady: false,
+  setWorldReady: (worldReady) => {
+    set({ worldReady });
   },
 }));

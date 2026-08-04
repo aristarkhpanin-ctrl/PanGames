@@ -87,6 +87,40 @@ body {
   opacity: 0.75;
 }
 
+/* Отладочная панель по F3. Игроку она не показывается никогда. */
+.debug-overlay {
+  position: fixed;
+  right: 16px;
+  top: 16px;
+  min-width: 240px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: rgb(11 26 42 / 82%);
+  color: var(--sand);
+  font-size: 12px;
+  line-height: 17px;
+  pointer-events: auto;
+}
+
+.debug-readout {
+  margin: 0 0 10px;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  line-height: 17px;
+  white-space: pre;
+}
+
+.debug-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 6px;
+}
+
+.debug-row input[type='range'] {
+  flex: 1;
+}
+
 /* Видимый фокус нужен с самого начала, а не с этапа полировки (§8 ТЗ). */
 :focus-visible {
   outline: 2px solid var(--lamp);
