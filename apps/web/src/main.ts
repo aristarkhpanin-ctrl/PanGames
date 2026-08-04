@@ -22,9 +22,7 @@ const seed = seedParam === null ? 42 : Number.parseInt(seedParam, 10) || 42;
 
 mountHud(hud);
 
-void createScene(canvas, seed).then(() => {
-  useGameStore.getState().setWorldReady(true);
-});
+void createScene(canvas, seed);
 
 void checkServerHealth().then((ok) => {
   useGameStore.getState().setServerStatus(ok ? 'online' : 'unreachable');

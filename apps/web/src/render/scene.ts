@@ -2,15 +2,23 @@ import { generateIsland, VOXEL_SIZE, WORLD_X, WORLD_Z } from '@gavan/shared';
 import * as THREE from 'three';
 
 import { CameraControls } from '../input/controls';
+import { Editing } from '../input/editing';
+import { Picker } from '../input/picking';
+import { CommandBus, LocalTransport } from '../net/commands';
+import { LiveWorld, type WorldUpdate } from '../state/liveWorld';
+import { loadWorld, saveWorld } from '../state/localSave';
+import { useGameStore } from '../state/store';
 import { DebugOverlay } from './debugOverlay';
 import { Decor } from './decor';
+import { Highlight } from './highlight';
 import { Lighting } from './lighting';
 import { MesherPool } from './mesherPool';
+import { Plants } from './plants';
 import { Terrain } from './terrain';
 import { Water } from './water';
 
 /**
- * Сборка сцены: остров из сида, чанки из воркеров, вода, деревья, свет и камера.
+ * Сборка сцены: остров из сида, чанки из воркеров, вода, деревья, свет, камера и редактирование.
  *
  * Всё тяжёлое живёт вне главного потока: генерация занимает около 70 мс один раз при входе,
  * мешинг целиком уезжает в воркеры (§2.4, §12 ТЗ).
@@ -18,6 +26,9 @@ import { Water } from './water';
 
 /** Реальных секунд в игровом часе (§3 ТЗ). Игровые сутки — 24 минуты. */
 const SECONDS_PER_GAME_HOUR = 60;
+
+/** Как долго ждать затишья, прежде чем записать мир. Протяжка кистью шлёт правки пачками. */
+const SAVE_DELAY_MS = 700;
 
 export interface SceneHandle {
   dispose(): void;
@@ -35,16 +46,54 @@ export async function createScene(canvas: HTMLCanvasElement, seed: number): Prom
   const camera = new THREE.PerspectiveCamera(50, 1, 0.5, 400);
 
   const island = generateIsland(seed);
+  const world = new LiveWorld(island);
 
-  const pool = new MesherPool(island.voxels);
+  const pool = new MesherPool(world.voxels);
   const terrain = new Terrain(pool);
   const water = new Water(island.shape.waterDepth);
   const decor = new Decor(island.trees);
+  const plants = new Plants();
+  const highlight = new Highlight();
   const lighting = new Lighting(scene);
   const controls = new CameraControls(camera, canvas);
   const debug = new DebugOverlay(renderer);
 
-  scene.add(terrain.group, water.group, decor.group);
+  scene.add(terrain.group, water.group, decor.group, plants.group, highlight.object);
+
+  let saveTimer: ReturnType<typeof setTimeout> | null = null;
+  const scheduleSave = (): void => {
+    if (saveTimer !== null) clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      saveWorld(world);
+    }, SAVE_DELAY_MS);
+  };
+
+  /**
+   * Правка мира: копии в воркерах догоняют главный поток, и перестраиваются только
+   * задетые чанки — вместе с соседними, если правка легла у самой границы.
+   */
+  const onWorldChanged = (update: WorldUpdate): void => {
+    if (update.changes.length > 0) {
+      const indices = new Uint32Array(update.changes.length);
+      const materials = new Uint8Array(update.changes.length);
+      update.changes.forEach((change, i) => {
+        indices[i] = change.index;
+        materials[i] = change.material;
+      });
+      pool.applyEdits(indices, materials);
+    }
+
+    if (update.dirty.size > 0) void terrain.rebuild(update.dirty);
+    plants.rebuild(world.plants);
+    scheduleSave();
+  };
+
+  const bus = new CommandBus(world, new LocalTransport(), onWorldChanged);
+  const picker = new Picker(camera, world);
+  const editing = new Editing(canvas, picker, highlight, bus, () => {
+    plants.rebuild(world.plants);
+    scheduleSave();
+  });
 
   const resize = (): void => {
     const width = canvas.clientWidth;
@@ -85,6 +134,7 @@ export async function createScene(canvas: HTMLCanvasElement, seed: number): Prom
     }
 
     controls.update(delta);
+    editing.updateHighlight();
     const sky = lighting.update(hour, controls.focus);
     water.update(delta, sky);
 
@@ -94,15 +144,32 @@ export async function createScene(canvas: HTMLCanvasElement, seed: number): Prom
 
   loop();
 
+  // Сохранённые правки поднимаются до первого мешинга: иначе остров пришлось бы строить дважды.
+  const saved = loadWorld(seed);
+  if (saved !== null) {
+    const update = world.restore(saved.patches, saved.plants);
+    if (update.changes.length > 0) {
+      const indices = new Uint32Array(update.changes.map((change) => change.index));
+      const materials = new Uint8Array(update.changes.map((change) => change.material));
+      pool.applyEdits(indices, materials);
+    }
+    plants.rebuild(world.plants);
+  }
+
   // Меши приезжают по мере готовности: остров проявляется чанк за чанком, а не после паузы.
   await terrain.buildAll();
+  useGameStore.getState().setWorldReady(true);
 
   return {
     dispose(): void {
       cancelAnimationFrame(frameId);
+      if (saveTimer !== null) clearTimeout(saveTimer);
       observer.disconnect();
+      editing.dispose();
       controls.dispose();
       debug.dispose();
+      highlight.dispose();
+      plants.dispose();
       terrain.dispose();
       water.dispose();
       decor.dispose();

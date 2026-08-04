@@ -87,6 +87,60 @@ body {
   opacity: 0.75;
 }
 
+/* Панель инструментов внизу: режим лопаты и подсказка по клавишам. */
+.hud-tools {
+  position: absolute;
+  bottom: calc(18px * var(--ui-scale));
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: calc(14px * var(--ui-scale));
+  align-items: center;
+  padding: calc(9px * var(--ui-scale)) calc(16px * var(--ui-scale));
+  border-radius: 999px;
+  background: rgb(11 26 42 / 62%);
+  color: var(--sand);
+  font-size: calc(13px * var(--ui-scale));
+  line-height: calc(18px * var(--ui-scale));
+  white-space: nowrap;
+}
+
+.hud-mode {
+  font-weight: 500;
+}
+
+.hud-choice {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  opacity: 0.9;
+}
+
+.hud-swatch {
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+}
+
+.hud-hint {
+  opacity: 0.55;
+}
+
+/* Тихая строка: объясняет отказ и что делать дальше. Не алерт (§8 ТЗ). */
+.hud-notice {
+  position: absolute;
+  bottom: calc(64px * var(--ui-scale));
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: calc(8px * var(--ui-scale)) calc(16px * var(--ui-scale));
+  border-radius: 10px;
+  background: rgb(11 26 42 / 72%);
+  color: var(--sand);
+  font-size: calc(13px * var(--ui-scale));
+  line-height: calc(18px * var(--ui-scale));
+}
+
 /* Отладочная панель по F3. Игроку она не показывается никогда. */
 .debug-overlay {
   position: fixed;
