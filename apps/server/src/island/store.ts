@@ -11,6 +11,7 @@ import {
   generateIsland,
   Material,
   SNAPSHOT_VERSION,
+  type CatchUpEvent,
   toSnapshot,
   toVillagerSnapshot,
   TICKS_PER_HOUR,
@@ -49,8 +50,15 @@ export interface LiveIsland {
   scenicSpots: Vec3[];
   villagers: Villager[];
   tick: number;
+  /** Серверное время последнего расчёта. Только по нему считается догон (§9 ТЗ). */
+  lastTickAt: Date;
   /** Есть ли несохранённые изменения. Запись идёт пачками, а не на каждый тик. */
   dirty: boolean;
+  /**
+   * Что случилось, пока игрока не было. Читается один раз — тем, кто первым спросит
+   * состояние, — и на этом исчезает: экран «Пока тебя не было» показывается однажды.
+   */
+  pendingCatchUp: CatchUpEvent[] | null;
 }
 
 /** Короткий код для гостей. Без похожих букв: код диктуют вслух. */
@@ -74,6 +82,7 @@ export function hydrate(
   world: WorldState,
   tick: number,
   people: Villager[],
+  lastTickAt: Date = new Date(),
 ): LiveIsland {
   const generated = generateIsland(seed);
 
@@ -95,7 +104,9 @@ export function hydrate(
     scenicSpots: findScenicSpots(grid),
     villagers: people,
     tick,
+    lastTickAt,
     dirty: false,
+    pendingCatchUp: null,
   };
 }
 
@@ -127,6 +138,7 @@ export async function loadIsland(db: Database, id: string): Promise<LiveIsland |
     world,
     row.islands.tick,
     people.map((p) => p.data),
+    row.islands.lastTickAt,
   );
 }
 
@@ -139,11 +151,12 @@ export async function loadIsland(db: Database, id: string): Promise<LiveIsland |
  */
 export async function saveIsland(db: Database, live: LiveIsland): Promise<void> {
   const snapshot = toSnapshot(live.world);
+  live.lastTickAt = new Date();
 
   await db.transaction(async (tx) => {
     await tx
       .update(islands)
-      .set({ tick: live.tick, lastTickAt: new Date() })
+      .set({ tick: live.tick, lastTickAt: live.lastTickAt })
       .where(eq(islands.id, live.id));
 
     await tx

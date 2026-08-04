@@ -1,6 +1,8 @@
 import './fonts.css';
 import './styles.css';
 
+import { worthShowing } from '@gavan/shared';
+
 import { createIsland, fetchIsland, fetchIslands, fetchMe } from './net/api';
 import { createScene } from './render/scene';
 import { useGameStore } from './state/store';
@@ -48,6 +50,11 @@ async function boot(canvasElement: HTMLCanvasElement): Promise<void> {
   }
 
   store.setIsland({ id: chosen.id, name: chosen.name });
+
+  // Экран возвращения показывается только если есть о чём рассказать (§3 ТЗ):
+  // пустой отчёт хуже отсутствия отчёта.
+  if (state.catchUp !== null && worthShowing(state.catchUp)) store.setCatchUp(state.catchUp);
+
   await createScene(canvasElement, state);
 }
 

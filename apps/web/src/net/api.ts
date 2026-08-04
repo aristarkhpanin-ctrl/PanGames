@@ -1,4 +1,10 @@
-import type { Command, ValidationResult, Villager, WorldSnapshot } from '@gavan/shared';
+import type {
+  CatchUpEvent,
+  Command,
+  ValidationResult,
+  Villager,
+  WorldSnapshot,
+} from '@gavan/shared';
 
 import { serverUrl } from './health';
 
@@ -29,6 +35,8 @@ export interface IslandState {
   world: WorldSnapshot;
   villagers: Villager[];
   storageCap: number;
+  /** Что случилось, пока игрока не было. `null` — не было и нечего показывать. */
+  catchUp: CatchUpEvent[] | null;
 }
 
 export interface CommandsResponse {

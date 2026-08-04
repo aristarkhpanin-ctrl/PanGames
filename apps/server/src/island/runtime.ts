@@ -1,6 +1,7 @@
 import {
   applyCommand,
   autoAssignments,
+  catchUp,
   commitEffect,
   economyTick,
   hourOfTick,
@@ -9,6 +10,7 @@ import {
   validate,
   WORLD_X,
   WORLD_Z,
+  type CatchUpEvent,
   type Command,
   type ValidationResult,
   type Villager,
@@ -64,6 +66,11 @@ export class IslandRuntime {
   private readonly idleSince = new Map<string, number>();
   private readonly listeners = new Set<TickListener>();
   private readonly ticksSinceSave = new Map<string, number>();
+  /**
+   * Острова, которые прямо сейчас поднимаются. Без этого два одновременных запроса
+   * прочитали бы одно и то же `lastTickAt` и начислили догон дважды.
+   */
+  private readonly opening = new Map<string, Promise<LiveIsland | null>>();
   private timer: ReturnType<typeof setInterval> | null = null;
 
   constructor(private readonly db: Database) {}
@@ -93,16 +100,59 @@ export class IslandRuntime {
     return () => this.listeners.delete(listener);
   }
 
-  /** Поднимает остров в память, если его там ещё нет. */
+  /**
+   * Поднимает остров в память и досчитывает то, что случилось без игрока (M6.2).
+   *
+   * Догон считается ровно один раз: остров, который уже в памяти, не досчитывается повторно,
+   * а два одновременных запроса делят один и тот же подъём. Время берётся только серверное —
+   * из браузера его не подкрутить (§9 ТЗ).
+   */
   async open(islandId: string): Promise<LiveIsland | null> {
     const known = this.live.get(islandId);
     if (known !== undefined) return known;
 
+    const already = this.opening.get(islandId);
+    if (already !== undefined) return already;
+
+    const loading = this.load(islandId).finally(() => {
+      this.opening.delete(islandId);
+    });
+    this.opening.set(islandId, loading);
+    return loading;
+  }
+
+  private async load(islandId: string): Promise<LiveIsland | null> {
     const loaded = await loadIsland(this.db, islandId);
     if (loaded === null) return null;
 
+    const absenceMs = Date.now() - loaded.lastTickAt.getTime();
+    const result = catchUp({
+      world: loaded.world,
+      villagers: loaded.villagers,
+      nodes: loaded.generated.resourceNodes,
+      reader: loaded.reader,
+      fromTick: loaded.tick,
+      absenceMs,
+    });
+
+    if (result.gameHours > 0) {
+      loaded.world = result.world;
+      loaded.villagers = result.villagers;
+      loaded.tick = result.tick;
+      loaded.pendingCatchUp = result.events;
+      // Запись сразу: пока догон не в базе, повторный подъём начислил бы его ещё раз.
+      await saveIsland(this.db, loaded);
+    }
+
     this.live.set(islandId, loaded);
     return loaded;
+  }
+
+  /** Отдаёт результат догона один раз: экран «Пока тебя не было» показывается однажды. */
+  takeCatchUp(island: LiveIsland): CatchUpEvent[] | null {
+    const events = island.pendingCatchUp;
+    island.pendingCatchUp = null;
+    return events;
   }
 
   /** Кладёт уже собранный остров в память — сразу после создания, без лишнего чтения. */
@@ -123,6 +173,15 @@ export class IslandRuntime {
     } else {
       this.online.set(islandId, left);
     }
+  }
+
+  /**
+   * Забывает остров, не сохраняя. Нужно тестам, чтобы проверить подъём с догоном,
+   * и выключению, когда остров уже записан.
+   */
+  forget(islandId: string): void {
+    this.live.delete(islandId);
+    this.ticksSinceSave.delete(islandId);
   }
 
   playersOn(islandId: string): number {

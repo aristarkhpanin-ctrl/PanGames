@@ -6,6 +6,7 @@ import { BuildBar } from './BuildBar';
 import { BuildingCard } from './BuildingCard';
 import { ResourceBar } from './ResourceBar';
 import { SignIn } from './SignIn';
+import { Welcome } from './Welcome';
 import { VillagerCard, VillagerColumn } from './VillagerCard';
 import { useGameStore, type EditMode } from '../state/store';
 
@@ -77,6 +78,7 @@ export function Hud(): React.JSX.Element {
       {selected !== undefined && <VillagerCard villager={selected} />}
       <BuildingCard />
       <BuildBar />
+      <Welcome />
 
       <div className="hud-tools" role="status">
         <span className="hud-mode">{MODE_LABEL[mode]}</span>

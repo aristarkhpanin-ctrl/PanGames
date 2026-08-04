@@ -27,20 +27,26 @@ const TEST_URL = BASE_URL.replace(/\/[^/]+$/, `/${TEST_DB}`);
 let app: FastifyInstance;
 let sql: ReturnType<typeof postgres>;
 let mail: MemoryMail;
-let available = true;
 
-beforeAll(async () => {
+/**
+ * База поднимается прямо здесь, при загрузке файла: `describe.skipIf` решает свою судьбу
+ * до того, как отработает `beforeAll`, и узнать про отсутствующую базу позже уже поздно —
+ * тесты падали бы вместо того, чтобы честно пропуститься.
+ */
+const available = ((): boolean => {
   try {
     execSync(
       `psql "${BASE_URL}" -c "drop database if exists ${TEST_DB}" -c "create database ${TEST_DB}"`,
-      {
-        stdio: 'pipe',
-      },
+      { stdio: 'pipe' },
     );
+    return true;
   } catch {
-    available = false;
-    return;
+    return false;
   }
+})();
+
+beforeAll(async () => {
+  if (!available) return;
 
   const migrator = postgres(TEST_URL, { max: 1 });
   await migrate(drizzle(migrator), { migrationsFolder: './drizzle' });
@@ -428,3 +434,130 @@ async function flatSpot(id: string): Promise<{ x: number; y: number; z: number }
 
   throw new Error('не нашлось ровного места');
 }
+
+describe.skipIf(!available)('догон', () => {
+  /** Отматывает серверное время последнего расчёта назад — как будто игрок ушёл. */
+  async function goAway(id: string, hours: number): Promise<void> {
+    await sql`update islands set last_tick_at = now() - ${`${String(hours)} hours`}::interval where id = ${id}`;
+    app.runtime.forget(id);
+  }
+
+  it('первый вход в новый остров догона не делает', async () => {
+    const cookie = await signIn('fresh@example.com');
+    const id = await makeIsland(cookie);
+
+    const island = (
+      await app.inject({ method: 'GET', url: `/islands/${id}`, headers: { cookie } })
+    ).json<{ catchUp: unknown }>();
+
+    expect(island.catchUp).toBeNull();
+  });
+
+  it('сутки отсутствия дают правдоподобный результат', async () => {
+    const cookie = await signIn('away@example.com');
+    const id = await makeIsland(cookie);
+    const spot = await flatSpot(id);
+
+    await app.inject({
+      method: 'POST',
+      url: `/islands/${id}/commands`,
+      headers: { cookie },
+      payload: { commands: [{ t: 'place_building', typeId: 'hut', pos: spot, rot: 0 }] },
+    });
+    await app.runtime.stop();
+    app.runtime.start();
+
+    await goAway(id, 24);
+
+    const island = (
+      await app.inject({ method: 'GET', url: `/islands/${id}`, headers: { cookie } })
+    ).json<{
+      catchUp: { kind: string }[] | null;
+      world: { buildings: { progress: number }[] };
+      villagers: { mood: number }[];
+    }>();
+
+    // Стройка закончилась, кто-то въехал, настроение спокойное.
+    expect(island.world.buildings[0]?.progress).toBe(1);
+    expect(island.catchUp?.some((event) => event.kind === 'built')).toBe(true);
+    expect(island.catchUp?.some((event) => event.kind === 'settled')).toBe(true);
+    for (const villager of island.villagers) {
+      expect(villager.mood).toBeGreaterThanOrEqual(55);
+    }
+  });
+
+  it('второй запрос догон не повторяет', async () => {
+    const cookie = await signIn('twice@example.com');
+    const id = await makeIsland(cookie);
+    await app.runtime.stop();
+    app.runtime.start();
+    await goAway(id, 24);
+
+    const read = async () =>
+      (await app.inject({ method: 'GET', url: `/islands/${id}`, headers: { cookie } })).json<{
+        catchUp: unknown;
+        tick: number;
+      }>();
+
+    const first = await read();
+    const second = await read();
+
+    expect(first.catchUp).not.toBeNull();
+    // Экран возвращения показывается один раз, и время второй раз не начисляется.
+    expect(second.catchUp).toBeNull();
+    expect(second.tick).toBe(first.tick);
+  });
+
+  it('два одновременных запроса не начисляют ресурсы дважды', async () => {
+    const cookie = await signIn('race@example.com');
+    const id = await makeIsland(cookie);
+    const spot = await flatSpot(id);
+
+    await app.inject({
+      method: 'POST',
+      url: `/islands/${id}/commands`,
+      headers: { cookie },
+      payload: { commands: [{ t: 'place_building', typeId: 'woodcutter', pos: spot, rot: 0 }] },
+    });
+    await app.runtime.stop();
+    app.runtime.start();
+    await goAway(id, 24);
+
+    const [left, right] = await Promise.all([
+      app.inject({ method: 'GET', url: `/islands/${id}`, headers: { cookie } }),
+      app.inject({ method: 'GET', url: `/islands/${id}`, headers: { cookie } }),
+    ]);
+
+    const a = left.json<{ tick: number; world: { resources: Record<string, number> } }>();
+    const b = right.json<{ tick: number; world: { resources: Record<string, number> } }>();
+
+    expect(a.tick).toBe(b.tick);
+    expect(a.world.resources.wood).toBe(b.world.resources.wood);
+  });
+
+  it('подмена времени в запросе ни на что не влияет', async () => {
+    const cookie = await signIn('timelord@example.com');
+    const id = await makeIsland(cookie);
+    await app.runtime.stop();
+    app.runtime.start();
+
+    const readTick = async (query = ''): Promise<number> =>
+      (
+        await app.inject({ method: 'GET', url: `/islands/${id}${query}`, headers: { cookie } })
+      ).json<{ tick: number }>().tick;
+
+    const before = await readTick();
+
+    // Остров стоял час; в запросе просим начислить тысячу.
+    await goAway(id, 1);
+    const greedy = (await readTick('?absenceMs=999999999&hours=1000&tick=999999')) - before;
+
+    // И тот же час без всяких просьб.
+    await goAway(id, 1);
+    const honest = (await readTick()) - before - greedy;
+
+    // Сколько бы клиент ни просил, зачлось ровно то, что прошло по серверным часам.
+    expect(greedy).toBe(honest);
+    expect(greedy).toBeGreaterThan(0);
+  });
+});

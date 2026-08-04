@@ -1,4 +1,4 @@
-import type { Command, PlacedBuilding, ResourceId, Villager } from '@gavan/shared';
+import type { CatchUpEvent, Command, PlacedBuilding, ResourceId, Villager } from '@gavan/shared';
 import { BASE_STORAGE_CAP, startingResources } from '@gavan/shared';
 import { create } from 'zustand';
 
@@ -91,6 +91,14 @@ interface GameState {
 
   selectedBuilding: string | null;
   selectBuilding: (id: string | null) => void;
+
+  /**
+   * Что случилось, пока игрока не было. `null` — показывать нечего или уже показали:
+   * экран возвращения не всплывает дважды и ничему не мешает.
+   */
+  catchUp: readonly CatchUpEvent[] | null;
+  setCatchUp: (events: readonly CatchUpEvent[] | null) => void;
+  dismissCatchUp: () => void;
 
   /** Зеркало жителей из воркера симуляции. React читает отсюда, сцена сюда пишет. */
   villagers: readonly Villager[];
@@ -193,6 +201,14 @@ export const useGameStore = create<GameState>()((set) => ({
   selectedBuilding: null,
   selectBuilding: (selectedBuilding) => {
     set({ selectedBuilding, selectedVillager: null });
+  },
+
+  catchUp: null,
+  setCatchUp: (catchUp) => {
+    set({ catchUp });
+  },
+  dismissCatchUp: () => {
+    set({ catchUp: null });
   },
 
   villagers: [],

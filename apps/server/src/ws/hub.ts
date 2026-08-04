@@ -91,6 +91,7 @@ export async function registerWebSocket(
             world: toSnapshot(island.world),
             villagers: island.villagers.map(toVillagerSnapshot),
             storageCap: island.world.storageCap,
+            catchUp: runtime.takeCatchUp(island),
           }),
         );
 

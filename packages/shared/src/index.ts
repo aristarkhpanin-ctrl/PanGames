@@ -41,4 +41,6 @@ export * from './content/buildings';
 export * from './sim/economy';
 export * from './sim/economyTick';
 export * from './sim/assign';
+export * from './sim/aggregate';
+export * from './content/welcome';
 export * from './save';

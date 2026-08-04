@@ -169,8 +169,9 @@ export function registerIslandRoutes(
       world: toSnapshot(island.world),
       villagers: island.villagers.map(toVillagerSnapshot),
       storageCap: island.world.storageCap,
-      // Место под результат догона: сам догон появится на M6 (§3 ТЗ).
-      catchUp: null,
+      // Что случилось, пока игрока не было (§3 ТЗ). Данные, а не готовый текст: слова
+      // подбирает интерфейс, и он же решает, показывать ли экран возвращения вообще.
+      catchUp: runtime.takeCatchUp(island),
     });
   });
 
