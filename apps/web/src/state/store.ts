@@ -1,3 +1,4 @@
+import type { Villager } from '@gavan/shared';
 import { create } from 'zustand';
 
 /**
@@ -30,6 +31,13 @@ interface GameState {
 
   plantIndex: number;
   cyclePlant: (count: number) => void;
+
+  /** Зеркало жителей из воркера симуляции. React читает отсюда, сцена сюда пишет. */
+  villagers: readonly Villager[];
+  setVillagers: (villagers: readonly Villager[]) => void;
+
+  selectedVillager: string | null;
+  selectVillager: (id: string | null) => void;
 
   /** Тихая строка внизу экрана: подсказка или объяснение отказа. Не алерт. */
   notice: string | null;
@@ -66,6 +74,16 @@ export const useGameStore = create<GameState>()((set) => ({
   plantIndex: 0,
   cyclePlant: (count) => {
     set((state) => ({ plantIndex: (state.plantIndex + 1) % count }));
+  },
+
+  villagers: [],
+  setVillagers: (villagers) => {
+    set({ villagers });
+  },
+
+  selectedVillager: null,
+  selectVillager: (selectedVillager) => {
+    set({ selectedVillager });
   },
 
   notice: null,

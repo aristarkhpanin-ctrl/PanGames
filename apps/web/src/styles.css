@@ -190,3 +190,145 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Колонка жителей справа: аватар и настроение. Свёрнута, пока не нажали (§8 ТЗ). */
+.column {
+  position: absolute;
+  top: calc(90px * var(--ui-scale));
+  right: calc(16px * var(--ui-scale));
+  display: flex;
+  flex-direction: column;
+  gap: calc(6px * var(--ui-scale));
+}
+
+.column-item {
+  display: flex;
+  gap: calc(8px * var(--ui-scale));
+  align-items: center;
+  padding: calc(5px * var(--ui-scale)) calc(10px * var(--ui-scale));
+  border: 0;
+  border-radius: 999px;
+  background: rgb(11 26 42 / 58%);
+  color: var(--sand);
+  font: inherit;
+  font-size: calc(13px * var(--ui-scale));
+  cursor: pointer;
+}
+
+.column-item.is-open {
+  background: rgb(11 26 42 / 85%);
+}
+
+.column-face {
+  width: calc(18px * var(--ui-scale));
+  height: calc(18px * var(--ui-scale));
+  border-radius: 5px;
+}
+
+/* Настроение читается формой, а не только цветом: дальтоник должен различать его тоже. */
+.column-mood {
+  width: 9px;
+  height: 9px;
+  background: currentcolor;
+}
+
+.mood-bright {
+  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+}
+
+.mood-glad {
+  border-radius: 50%;
+}
+
+.mood-calm {
+  border-radius: 2px;
+}
+
+.mood-thoughtful {
+  height: 3px;
+  border-radius: 2px;
+}
+
+.mood-sad {
+  height: 3px;
+  border-radius: 2px;
+  opacity: 0.5;
+}
+
+/* Карточка жителя. Настроение здесь словом, процентов нет нигде. */
+.card {
+  position: absolute;
+  top: calc(90px * var(--ui-scale));
+  right: calc(150px * var(--ui-scale));
+  width: calc(250px * var(--ui-scale));
+  padding: calc(14px * var(--ui-scale));
+  border-radius: 12px;
+  background: rgb(11 26 42 / 88%);
+  color: var(--sand);
+  font-size: calc(13px * var(--ui-scale));
+  line-height: calc(19px * var(--ui-scale));
+}
+
+.card-head {
+  display: flex;
+  gap: calc(10px * var(--ui-scale));
+  align-items: center;
+}
+
+.card-face {
+  position: relative;
+  width: calc(30px * var(--ui-scale));
+  height: calc(30px * var(--ui-scale));
+  border-radius: 7px;
+}
+
+.card-hair {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 34%;
+  border-radius: 7px 7px 0 0;
+}
+
+.card-name {
+  font-size: calc(15px * var(--ui-scale));
+}
+
+.card-nickname {
+  opacity: 0.7;
+}
+
+.card-close {
+  margin-left: auto;
+  padding: 2px 6px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  opacity: 0.6;
+}
+
+.card-now {
+  margin: calc(10px * var(--ui-scale)) 0;
+  font-size: calc(14px * var(--ui-scale));
+}
+
+.card-facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px calc(10px * var(--ui-scale));
+  margin: 0;
+}
+
+.card-facts dt {
+  opacity: 0.55;
+}
+
+.card-facts dd {
+  margin: 0;
+}
+
+.card-hint {
+  margin: calc(10px * var(--ui-scale)) 0 0;
+  opacity: 0.6;
+}

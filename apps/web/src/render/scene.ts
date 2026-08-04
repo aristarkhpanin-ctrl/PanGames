@@ -7,6 +7,7 @@ import { Picker } from '../input/picking';
 import { CommandBus, LocalTransport } from '../net/commands';
 import { LiveWorld, type WorldUpdate } from '../state/liveWorld';
 import { loadWorld, saveWorld } from '../state/localSave';
+import { SimClient } from '../sim/simClient';
 import { useGameStore } from '../state/store';
 import { DebugOverlay } from './debugOverlay';
 import { Decor } from './decor';
@@ -14,6 +15,7 @@ import { Highlight } from './highlight';
 import { Lighting } from './lighting';
 import { MesherPool } from './mesherPool';
 import { Plants } from './plants';
+import { VillagerRenderer } from './villagerRenderer';
 import { Terrain } from './terrain';
 import { Water } from './water';
 
@@ -53,12 +55,26 @@ export async function createScene(canvas: HTMLCanvasElement, seed: number): Prom
   const water = new Water(island.shape.waterDepth);
   const decor = new Decor(island.trees);
   const plants = new Plants();
+  const villagerRenderer = new VillagerRenderer();
   const highlight = new Highlight();
   const lighting = new Lighting(scene);
   const controls = new CameraControls(camera, canvas);
   const debug = new DebugOverlay(renderer);
 
-  scene.add(terrain.group, water.group, decor.group, plants.group, highlight.object);
+  scene.add(
+    terrain.group,
+    water.group,
+    decor.group,
+    plants.group,
+    villagerRenderer.group,
+    highlight.object,
+  );
+
+  // Симуляция целиком в воркере: поиск пути не имеет права задержать кадр (§12 ТЗ).
+  const sim = new SimClient(world.voxels, seed, 'island-local');
+  sim.subscribe((villagers) => {
+    useGameStore.getState().setVillagers(villagers);
+  });
 
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
   const scheduleSave = (): void => {
@@ -81,6 +97,7 @@ export async function createScene(canvas: HTMLCanvasElement, seed: number): Prom
         materials[i] = change.material;
       });
       pool.applyEdits(indices, materials);
+      sim.applyEdits(indices, materials);
     }
 
     if (update.dirty.size > 0) void terrain.rebuild(update.dirty);
@@ -135,6 +152,9 @@ export async function createScene(canvas: HTMLCanvasElement, seed: number): Prom
 
     controls.update(delta);
     editing.updateHighlight();
+
+    const alpha = sim.update(delta);
+    villagerRenderer.update(sim.villagers, sim.previousVillagers, alpha, delta);
     const sky = lighting.update(hour, controls.focus);
     water.update(delta, sky);
 
@@ -169,6 +189,8 @@ export async function createScene(canvas: HTMLCanvasElement, seed: number): Prom
       controls.dispose();
       debug.dispose();
       highlight.dispose();
+      sim.dispose();
+      villagerRenderer.dispose();
       plants.dispose();
       terrain.dispose();
       water.dispose();

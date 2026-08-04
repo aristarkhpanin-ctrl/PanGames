@@ -2,6 +2,7 @@ import { materialColor, PLANTS } from '@gavan/shared';
 import { useEffect } from 'react';
 
 import { FILL_MATERIALS } from '../input/editing';
+import { VillagerCard, VillagerColumn } from './VillagerCard';
 import { useGameStore, type EditMode } from '../state/store';
 
 /**
@@ -29,6 +30,8 @@ export function Hud(): React.JSX.Element {
   const brush = useGameStore((state) => state.brush);
   const fillIndex = useGameStore((state) => state.fillIndex);
   const plantIndex = useGameStore((state) => state.plantIndex);
+  const villagers = useGameStore((state) => state.villagers);
+  const selectedId = useGameStore((state) => state.selectedVillager);
   const notice = useGameStore((state) => state.notice);
   const noticeAt = useGameStore((state) => state.noticeAt);
   const setNotice = useGameStore((state) => state.setNotice);
@@ -45,6 +48,7 @@ export function Hud(): React.JSX.Element {
     };
   }, [notice, noticeAt, setNotice]);
 
+  const selected = villagers.find((villager) => villager.id === selectedId);
   const plant = PLANTS[plantIndex % PLANTS.length];
   const fillName = FILL_LABEL[fillIndex % FILL_LABEL.length] ?? 'землю';
   const fillColor = FILL_MATERIALS[fillIndex % FILL_MATERIALS.length];
@@ -54,11 +58,12 @@ export function Hud(): React.JSX.Element {
       <div className="hud-corner">
         <h1 className="hud-title">Гавань</h1>
         <p className="hud-note">
-          {worldReady
-            ? 'Остров ждёт, когда на него сойдут на берег.'
-            : 'Остров поднимается из моря.'}
+          {worldReady ? 'Здесь будет хорошо.' : 'Остров поднимается из моря.'}
         </p>
       </div>
+
+      <VillagerColumn villagers={villagers} />
+      {selected !== undefined && <VillagerCard villager={selected} />}
 
       <div className="hud-tools" role="status">
         <span className="hud-mode">{MODE_LABEL[mode]}</span>
