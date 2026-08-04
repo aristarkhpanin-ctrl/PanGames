@@ -51,7 +51,20 @@ export type RejectReason =
   | 'bad_soil'
   | 'underwater'
   | 'occupied'
-  | 'too_close';
+  | 'too_close'
+  | 'unknown_building'
+  | 'no_such_building'
+  | 'requires_missing'
+  | 'cannot_afford'
+  | 'uneven_ground'
+  | 'needs_land'
+  | 'needs_water'
+  | 'still_building'
+  | 'max_level'
+  | 'no_work_here'
+  | 'crew_full'
+  | 'no_beds'
+  | 'home_full';
 
 export type ValidationResult = { ok: true } | { ok: false; reason: RejectReason };
 

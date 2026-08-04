@@ -282,10 +282,10 @@ describe('слой команд — нереализованное и разни
     const state = createWorldState(SEED);
     const world = createWorld();
 
+    // Праздники и переименование появятся на M7; здания уже работают и сюда не входят.
     for (const command of [
-      { t: 'place_building', typeId: 'hut', pos: { x: 1, y: 1, z: 1 }, rot: 0 },
       { t: 'host_festival' },
-      { t: 'assign_job', villagerId: 'a', buildingId: null },
+      { t: 'rename', scope: 'island', name: 'Тихая' },
     ] satisfies Command[]) {
       expect(validate(command, state, world.reader)).toEqual({
         ok: false,

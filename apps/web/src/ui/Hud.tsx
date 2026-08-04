@@ -1,7 +1,10 @@
-import { materialColor, PLANTS } from '@gavan/shared';
+import { materialColor, PLANTS, type Villager } from '@gavan/shared';
 import { useEffect } from 'react';
 
 import { FILL_MATERIALS } from '../input/editing';
+import { BuildBar } from './BuildBar';
+import { BuildingCard } from './BuildingCard';
+import { ResourceBar } from './ResourceBar';
 import { VillagerCard, VillagerColumn } from './VillagerCard';
 import { useGameStore, type EditMode } from '../state/store';
 
@@ -17,6 +20,7 @@ const MODE_LABEL: Record<EditMode, string> = {
   dig: 'Копаю',
   fill: 'Насыпаю',
   plant: 'Сажаю',
+  build: 'Строю',
 };
 
 const FILL_LABEL = ['землю', 'песок', 'камень', 'дорожку'];
@@ -32,6 +36,8 @@ export function Hud(): React.JSX.Element {
   const plantIndex = useGameStore((state) => state.plantIndex);
   const villagers = useGameStore((state) => state.villagers);
   const selectedId = useGameStore((state) => state.selectedVillager);
+  const buildings = useGameStore((state) => state.buildings);
+  const moving = useGameStore((state) => state.movingBuildingId);
   const notice = useGameStore((state) => state.notice);
   const noticeAt = useGameStore((state) => state.noticeAt);
   const setNotice = useGameStore((state) => state.setNotice);
@@ -57,13 +63,14 @@ export function Hud(): React.JSX.Element {
     <>
       <div className="hud-corner">
         <h1 className="hud-title">Гавань</h1>
-        <p className="hud-note">
-          {worldReady ? 'Здесь будет хорошо.' : 'Остров поднимается из моря.'}
-        </p>
+        <p className="hud-note">{openingLine(worldReady, buildings.length, villagers)}</p>
+        {worldReady && <ResourceBar />}
       </div>
 
       <VillagerColumn villagers={villagers} />
       {selected !== undefined && <VillagerCard villager={selected} />}
+      <BuildingCard />
+      <BuildBar />
 
       <div className="hud-tools" role="status">
         <span className="hud-mode">{MODE_LABEL[mode]}</span>
@@ -90,15 +97,18 @@ export function Hud(): React.JSX.Element {
           </span>
         )}
 
-        {mode !== 'look' && mode !== 'plant' && (
+        {(mode === 'dig' || mode === 'fill') && (
           <span className="hud-choice">{brush === 0 ? 'одна клетка' : 'три на три'}</span>
         )}
 
+        {moving !== null && <span className="hud-choice">переносим — это бесплатно</span>}
+
         <span className="hud-hint">
-          1 смотреть · 2 копать · 3 насыпать · 4 сажать
+          1 смотреть · 2 копать · 3 насыпать · 4 сажать · 5 строить
           {mode === 'fill' && ' · X материал · B кисть'}
           {mode === 'plant' && ' · C растение'}
           {mode === 'dig' && ' · B кисть'}
+          {mode === 'build' && ' · R повернуть'}
           {' · Ctrl+Z отменить'}
         </span>
       </div>
@@ -106,4 +116,21 @@ export function Hud(): React.JSX.Element {
       {notice !== null && <p className="hud-notice">{notice}</p>}
     </>
   );
+}
+
+/**
+ * Первая строка на экране. Пустое состояние не сообщает о пустоте, а подсказывает первый шаг
+ * (§8 ТЗ): «Начни с шалаша — Мира ночует под открытым небом».
+ */
+function openingLine(
+  worldReady: boolean,
+  buildings: number,
+  villagers: readonly Villager[],
+): string {
+  if (!worldReady) return 'Остров поднимается из моря.';
+  if (buildings > 0) return 'Здесь будет хорошо.';
+
+  const first = villagers[0];
+  if (first === undefined) return 'Начни с шалаша — ночевать пока негде.';
+  return `Начни с шалаша — ${first.name.split(' ')[0] ?? first.name} ночует под открытым небом.`;
 }

@@ -36,3 +36,7 @@ export * from './sim/villager';
 export * from './sim/navigation';
 export * from './sim/agents';
 export * from './sim/tick';
+export * from './content/buildings';
+export * from './sim/economy';
+export * from './sim/economyTick';
+export * from './sim/assign';

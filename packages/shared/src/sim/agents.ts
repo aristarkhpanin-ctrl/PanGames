@@ -1,8 +1,10 @@
+import { buildingType } from '../content/buildings';
 import { traitWeight, worksAtNight } from '../content/traits';
 import { distance2D } from '../math';
 import type { AgentState, Needs, TraitId, Vec3, Villager } from '../types';
 import { WORLD_X, WORLD_Z, columnIndex } from '../voxels';
 import type { Rng } from '../worldgen/rng';
+import { footprintOf, homeOf, jobOf, type PlacedBuilding } from './economy';
 import { isWalkable, type NavGrid } from './navigation';
 import { DAWN_HOUR, DUSK_HOUR } from './time';
 
@@ -56,6 +58,8 @@ export interface AgentContext {
   villagers: readonly Villager[];
   /** Клетки, на которые приятно смотреть: берег и диковинка. Заполняется генератором острова. */
   scenicSpots: readonly Vec3[];
+  /** Здания острова: в них живут и работают. До первой постройки список пуст. */
+  buildings: readonly PlacedBuilding[];
 }
 
 export interface ChosenAction {
@@ -170,14 +174,64 @@ function pickTarget(
       return context.scenicSpots[rng.int(0, context.scenicSpots.length - 1)] ?? null;
     }
 
+    case 'sleep': {
+      // Дом есть — спать идут домой. Дома нет — ложатся там, где стоят, и это тоже нормально:
+      // под открытым небом не умирают, просто грустят (устав, п. 1).
+      const home = homeOf(context.buildings, villager.id);
+      if (home === undefined) return undefined;
+      return approachCell(home, context.grid) ?? undefined;
+    }
+
+    case 'work': {
+      const job = jobOf(context.buildings, villager.id);
+      if (job === undefined) return randomNearbyCell(villager, context, rng);
+      if (job.progress < 1) return randomNearbyCell(villager, context, rng);
+      return approachCell(job, context.grid) ?? undefined;
+    }
+
     case 'wander':
-    case 'work':
       return randomNearbyCell(villager, context, rng);
 
     default:
-      // Есть и спать можно там, где стоишь: домов и очага на этом этапе ещё нет.
+      // Есть можно там, где стоишь: очага на этом этапе ещё нет.
       return undefined;
   }
+}
+
+/**
+ * Куда встать, чтобы оказаться «в здании». Земля под зданием остаётся проходимой, поэтому
+ * обычно это его середина; если туда не пройти, берётся ближайшая клетка вокруг.
+ */
+export function approachCell(building: PlacedBuilding, grid: NavGrid): Vec3 | null {
+  const type = buildingType(building.typeId);
+  const size = type === undefined ? { w: 1, d: 1 } : footprintOf(type, building.rotation);
+
+  const centerX = building.x + Math.floor(size.w / 2);
+  const centerZ = building.z + Math.floor(size.d / 2);
+
+  for (let radius = 0; radius <= 4; radius += 1) {
+    let best: Vec3 | null = null;
+    let bestDistance = Infinity;
+
+    for (let z = centerZ - radius; z <= centerZ + radius; z += 1) {
+      for (let x = centerX - radius; x <= centerX + radius; x += 1) {
+        // Внутри кольца уже искали на прошлом шаге.
+        if (radius > 0 && Math.abs(x - centerX) < radius && Math.abs(z - centerZ) < radius)
+          continue;
+        if (x < 0 || x >= WORLD_X || z < 0 || z >= WORLD_Z) continue;
+        if (!isWalkable(grid, x, z)) continue;
+
+        const distance = distance2D(x, z, centerX, centerZ);
+        if (distance >= bestDistance) continue;
+        bestDistance = distance;
+        best = { x, y: (grid.height[columnIndex(x, z)] ?? 0) + 1, z };
+      }
+    }
+
+    if (best !== null) return best;
+  }
+
+  return null;
 }
 
 function randomNearbyCell(villager: Villager, context: AgentContext, rng: Rng): Vec3 | null {

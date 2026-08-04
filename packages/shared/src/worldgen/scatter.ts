@@ -23,7 +23,7 @@ export interface TreeInstance {
   rotation: number;
 }
 
-export type ResourceNodeKind = 'stone' | 'clay' | 'sand' | 'berry' | 'fish';
+export type ResourceNodeKind = 'wood' | 'stone' | 'clay' | 'sand' | 'berry' | 'fish';
 
 export interface ResourceNode {
   id: string;
@@ -54,6 +54,8 @@ const NODE_SPEC: Record<
   ResourceNodeKind,
   { count: number; capacity: number; regenPerDay: number; spacing: number }
 > = {
+  // Роща отрастает: деревья восстанавливаются примерно за двое игровых суток (§4 ТЗ).
+  wood: { count: 5, capacity: 600, regenPerDay: 300, spacing: 10 },
   stone: { count: 6, capacity: 1400, regenPerDay: 0, spacing: 11 },
   clay: { count: 4, capacity: 900, regenPerDay: 0, spacing: 14 },
   sand: { count: 5, capacity: 700, regenPerDay: 40, spacing: 12 },
@@ -183,6 +185,8 @@ function candidatesFor(kind: ResourceNodeKind, shape: IslandShape, biomes: Uint8
 
       const suitable = (() => {
         switch (kind) {
+          case 'wood':
+            return isLand && biome === Biome.GROVE;
           case 'stone':
             return isLand && biome === Biome.ROCKS;
           case 'clay':

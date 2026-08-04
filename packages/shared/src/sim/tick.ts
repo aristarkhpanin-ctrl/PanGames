@@ -3,6 +3,7 @@ import type { AgentState, Vec3, Villager } from '../types';
 import { columnIndex } from '../voxels';
 import { createRng, deriveSeed, type Rng } from '../worldgen/rng';
 import { chooseAction, NEED_OF_ACTION, RESTORE_PER_TICK, type AgentContext } from './agents';
+import { comfortAt, COMFORT_FULL, homeOf, jobOf, type PlacedBuilding } from './economy';
 import { findPath, isWalkable, type NavGrid } from './navigation';
 import { decayNeeds, MOOD_FLOOR, smoothMood } from './needs';
 import { GAME_MINUTES_PER_TICK, hourOfTick } from './time';
@@ -34,6 +35,10 @@ export interface TickInput {
   scenicSpots: readonly Vec3[];
   /** Сид острова — из него выводится случайность тика. */
   seed: number;
+  /** Здания острова. Дом и работа хранятся в них, а не в жителе. */
+  buildings?: readonly PlacedBuilding[];
+  /** Что растёт на острове: зелень поблизости прибавляет уюта. */
+  plants?: readonly { x: number; z: number }[];
 }
 
 /** Сколько клеток житель проходит за тик. Неспешный шаг: игра про спокойствие. */
@@ -54,20 +59,32 @@ export function simulateTick(
   const rng = createRng(deriveSeed(input.seed, `tick:${String(tick)}`));
   const events: SimEvent[] = [];
 
+  const buildings = input.buildings ?? [];
+  const plants = input.plants ?? [];
+
   const context: AgentContext = {
     grid: input.grid,
     hour,
     tick,
     villagers: state.villagers,
     scenicSpots: input.scenicSpots,
+    buildings,
   };
 
   let pathsLeft = PATH_BUDGET_PER_TICK;
   const villagers = state.villagers.map((villager) => {
     const next = { ...villager, needs: decayNeeds(villager.needs, GAME_MINUTES_PER_TICK / 60) };
 
-    // Укрытие бинарно: дома появятся на M4, до тех пор все ночуют под открытым небом.
-    next.needs.shelter = next.homeId === undefined ? 0 : 100;
+    // Дом и работа живут в зданиях: мир меняется командами, а житель их только отражает.
+    const home = homeOf(buildings, next.id);
+    const job = jobOf(buildings, next.id);
+    if (home === undefined) delete next.homeId;
+    else next.homeId = home.id;
+    if (job === undefined) delete next.jobId;
+    else next.jobId = job.id;
+
+    // Укрытие бинарно: есть своя крыша или нет.
+    next.needs.shelter = home === undefined ? 0 : 100;
 
     const moved = advance(next, input.grid);
     if (moved === 'arrived') events.push({ kind: 'arrived', villagerId: next.id });
@@ -86,6 +103,7 @@ export function simulateTick(
     }
 
     restoreNeed(next);
+    restoreFromComfort(next, buildings, plants);
     next.mood = smoothMood(next.mood, next.needs, GAME_MINUTES_PER_TICK / 60);
     // Пол настроения — устав, а не баланс. Проверяем ещё раз после всех расчётов.
     next.mood = clamp(next.mood, MOOD_FLOOR, 100);
@@ -174,4 +192,25 @@ function restoreNeed(villager: Villager): void {
   const rate = RESTORE_PER_TICK[villager.state];
   if (need === undefined || rate === undefined) return;
   villager.needs[need] = clamp(villager.needs[need] + rate, 0, 100);
+}
+
+/** Сколько красоты прибавляет за тик место с полным уютом. */
+const COMFORT_BEAUTY_PER_TICK = 3;
+
+/**
+ * Уют места сам по себе делает жизнь красивее (§4 ТЗ): житель на обустроенной улице
+ * теряет «красоту» медленнее, чем на пустом склоне. Ничего не отнимает — только прибавляет.
+ */
+function restoreFromComfort(
+  villager: Villager,
+  buildings: readonly PlacedBuilding[],
+  plants: readonly { x: number; z: number }[],
+): void {
+  if (buildings.length === 0 && plants.length === 0) return;
+
+  const comfort = comfortAt(villager.position, buildings, plants);
+  if (comfort <= 0) return;
+
+  const share = Math.min(1, comfort / COMFORT_FULL);
+  villager.needs.beauty = clamp(villager.needs.beauty + COMFORT_BEAUTY_PER_TICK * share, 0, 100);
 }

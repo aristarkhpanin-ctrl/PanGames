@@ -10,6 +10,7 @@ import {
   WORLD_X,
   WORLD_Z,
   type NavGrid,
+  type PlacedBuilding,
   type SimState,
   type Vec3,
   type Villager,
@@ -28,6 +29,8 @@ export interface SimInit {
   voxels: ArrayBuffer;
   seed: number;
   islandId: string;
+  /** С какого тика продолжаем. Часы жителей и часы солнца обязаны совпадать. */
+  tick: number;
 }
 
 export interface SimEdit {
@@ -40,7 +43,14 @@ export interface SimStep {
   type: 'tick';
 }
 
-export type SimIncoming = SimInit | SimEdit | SimStep;
+/** Здания и зелень острова: в них живут, в них работают, вокруг них уютно. */
+export interface SimWorld {
+  type: 'world';
+  buildings: PlacedBuilding[];
+  plants: { x: number; z: number }[];
+}
+
+export type SimIncoming = SimInit | SimEdit | SimStep | SimWorld;
 
 export interface SimSnapshot {
   type: 'snapshot';
@@ -52,6 +62,8 @@ let voxels: Uint8Array | null = null;
 let grid: NavGrid | null = null;
 let state: SimState | null = null;
 let scenicSpots: Vec3[] = [];
+let buildings: PlacedBuilding[] = [];
+let plants: { x: number; z: number }[] = [];
 let seed = 0;
 
 const reader: WorldReader = {
@@ -101,10 +113,16 @@ self.onmessage = (event: MessageEvent<SimIncoming>): void => {
     grid = buildNavGrid(reader);
     scenicSpots = findScenicSpots(grid);
     state = {
-      tick: 0,
+      tick: message.tick,
       villagers: createStartingVillagers(seed, message.islandId, findSpawns(grid)),
     };
     postSnapshot();
+    return;
+  }
+
+  if (message.type === 'world') {
+    buildings = message.buildings;
+    plants = message.plants;
     return;
   }
 
@@ -136,7 +154,7 @@ self.onmessage = (event: MessageEvent<SimIncoming>): void => {
   }
 
   if (state === null || grid === null) return;
-  state = simulateTick(state, { grid, scenicSpots, seed }).state;
+  state = simulateTick(state, { grid, scenicSpots, seed, buildings, plants }).state;
   postSnapshot();
 };
 

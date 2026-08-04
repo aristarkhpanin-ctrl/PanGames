@@ -5,7 +5,9 @@ import {
   type Command,
   type ValidationResult,
 } from '../commands';
+import { buildingType, type BuildingType } from '../content/buildings';
 import { plantKind } from '../content/plants';
+import { canAfford, footprintOf, upgradeCost, type PlacedBuilding } from './economy';
 import { isOpaque, Material, SEA_LEVEL, WORLD_X, WORLD_Y, WORLD_Z, columnIndex } from '../voxels';
 import { isInside, surfaceHeight, type WorldReader, type WorldState } from './world';
 
@@ -39,6 +41,62 @@ export function validate(
       return validateTerraform(command.edits, world);
     case 'plant':
       return validatePlant(command, state, world);
+    case 'place_building':
+      return validatePlacement(command.typeId, command.pos, command.rot, state, world, null);
+    case 'move_building': {
+      const existing = state.buildings.find((building) => building.id === command.id);
+      if (existing === undefined) return reject('no_such_building');
+      // Перемещение бесплатно и всегда (устав, п. 6) — цену не проверяем.
+      return validatePlacement(
+        existing.typeId,
+        command.pos,
+        command.rot,
+        state,
+        world,
+        existing.id,
+      );
+    }
+    case 'remove_building':
+      return state.buildings.some((building) => building.id === command.id)
+        ? ACCEPTED
+        : reject('no_such_building');
+    case 'upgrade_building': {
+      const existing = state.buildings.find((building) => building.id === command.id);
+      const type = existing === undefined ? undefined : buildingType(existing.typeId);
+      if (existing === undefined || type === undefined) return reject('no_such_building');
+      if (existing.progress < 1) return reject('still_building');
+      if (existing.level >= 3) return reject('max_level');
+      if (!canAfford(state.resources, upgradeCost(type, existing.level))) {
+        return reject('cannot_afford');
+      }
+      return ACCEPTED;
+    }
+    case 'assign_job': {
+      if (command.buildingId === null) return ACCEPTED;
+      const target = state.buildings.find((building) => building.id === command.buildingId);
+      const type = target === undefined ? undefined : buildingType(target.typeId);
+      if (target === undefined || type === undefined) return reject('no_such_building');
+      if (target.progress < 1) return reject('still_building');
+      if (type.workers === 0) return reject('no_work_here');
+      if (target.workers.length >= type.workers && !target.workers.includes(command.villagerId)) {
+        return reject('crew_full');
+      }
+      return ACCEPTED;
+    }
+    case 'assign_home': {
+      const target = state.buildings.find((building) => building.id === command.buildingId);
+      const type = target === undefined ? undefined : buildingType(target.typeId);
+      if (target === undefined || type === undefined) return reject('no_such_building');
+      if (target.progress < 1) return reject('still_building');
+      if ((type.beds ?? 0) === 0) return reject('no_beds');
+      if (
+        target.residents.length >= (type.beds ?? 0) &&
+        !target.residents.includes(command.villagerId)
+      ) {
+        return reject('home_full');
+      }
+      return ACCEPTED;
+    }
     default:
       // Остальные варианты появятся на M4 и M7. Форма контракта уже зафиксирована.
       return reject('not_implemented');
@@ -185,4 +243,104 @@ function validatePlant(
   }
 
   return ACCEPTED;
+}
+
+/**
+ * Можно ли поставить здание сюда (§6 ТЗ).
+ *
+ * Проверяем всё сразу: помещается ли участок, ровная ли земля, не в воде ли, не пересекается
+ * ли с соседями, открыто ли по цепочке и хватает ли ресурсов. Отказ возвращается кодом,
+ * а интерфейс превращает его в объяснение, что делать дальше.
+ */
+function validatePlacement(
+  typeId: string,
+  pos: { x: number; y: number; z: number },
+  rotation: 0 | 1 | 2 | 3,
+  state: WorldState,
+  world: WorldReader,
+  ignoreBuildingId: string | null,
+): ValidationResult {
+  const type = buildingType(typeId);
+  if (type === undefined) return reject('unknown_building');
+
+  for (const required of type.requires) {
+    const built = state.buildings.some(
+      (building) => building.typeId === required && building.progress >= 1,
+    );
+    if (!built) return reject('requires_missing');
+  }
+
+  const { w, d } = footprintOf(type, rotation);
+  if (pos.x < 0 || pos.z < 0 || pos.x + w > WORLD_X || pos.z + d > WORLD_Z) {
+    return reject('outside_world');
+  }
+
+  const ground = groundCheck(type, pos, w, d, world);
+  if (ground !== null) return reject(ground);
+
+  if (overlaps(state.buildings, pos, w, d, ignoreBuildingId)) return reject('occupied');
+
+  // Перемещение уже оплачено при заказе, а новая постройка — нет.
+  if (ignoreBuildingId === null && !canAfford(state.resources, type.cost)) {
+    return reject('cannot_afford');
+  }
+
+  return ACCEPTED;
+}
+
+/** Земля под участком: ровная суша, а для пирса и моста — мелководье. */
+function groundCheck(
+  type: BuildingType,
+  pos: { x: number; y: number; z: number },
+  w: number,
+  d: number,
+  world: WorldReader,
+): 'uneven_ground' | 'needs_land' | 'needs_water' | null {
+  let lowest = Infinity;
+  let highest = -Infinity;
+
+  for (let dz = 0; dz < d; dz += 1) {
+    for (let dx = 0; dx < w; dx += 1) {
+      const x = pos.x + dx;
+      const z = pos.z + dz;
+      const surface = surfaceHeight(world, x, z, WORLD_Y - 1);
+      if (surface < 0) return 'needs_land';
+
+      const underWater = surface <= SEA_LEVEL;
+      if (type.overWater === true) {
+        if (!underWater) return 'needs_water';
+      } else if (underWater) {
+        return 'needs_land';
+      }
+
+      lowest = Math.min(lowest, surface);
+      highest = Math.max(highest, surface);
+    }
+  }
+
+  // Перепад больше одного вокселя — здание повисло бы углом в воздухе.
+  return highest - lowest > 1 ? 'uneven_ground' : null;
+}
+
+function overlaps(
+  buildings: readonly PlacedBuilding[],
+  pos: { x: number; z: number },
+  w: number,
+  d: number,
+  ignoreId: string | null,
+): boolean {
+  for (const building of buildings) {
+    if (building.id === ignoreId) continue;
+    const type = buildingType(building.typeId);
+    if (type === undefined) continue;
+    const size = footprintOf(type, building.rotation);
+
+    const apart =
+      pos.x + w <= building.x ||
+      building.x + size.w <= pos.x ||
+      pos.z + d <= building.z ||
+      building.z + size.d <= pos.z;
+    if (!apart) return true;
+  }
+  return false;
 }

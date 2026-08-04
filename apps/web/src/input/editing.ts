@@ -2,13 +2,21 @@ import {
   MAX_TERRAFORM_EDITS,
   Material,
   PLANTS,
+  buildingType,
+  footprintOf,
   isInsideWorld,
+  missingResources,
+  surfaceHeight,
+  WORLD_Y,
   type Command,
   type RejectReason,
 } from '@gavan/shared';
 import type { CommandBus } from '../net/commands';
+import type { Ghost } from '../render/ghost';
 import type { Highlight } from '../render/highlight';
+import type { LiveWorld } from '../state/liveWorld';
 import { useGameStore, type EditMode } from '../state/store';
+import { shortageText } from '../ui/resourceText';
 import type { Picker } from './picking';
 
 /**
@@ -22,7 +30,7 @@ import type { Picker } from './picking';
 const FILL_MATERIALS = [Material.DIRT, Material.SAND, Material.STONE, Material.PATH] as const;
 
 /** Человеческие объяснения отказов. Каждое говорит, что делать дальше (§8 ТЗ). */
-const REJECT_TEXT: Partial<Record<RejectReason, string>> = {
+export const REJECT_TEXT: Partial<Record<RejectReason, string>> = {
   bedrock: 'Ниже копать нельзя — это дно острова.',
   ceiling: 'Выше насыпать некуда.',
   nothing_to_dig: 'Здесь пусто. Наведись на землю.',
@@ -34,6 +42,17 @@ const REJECT_TEXT: Partial<Record<RejectReason, string>> = {
   too_close: 'Кусту нужно больше места — отступи на клетку.',
   material_not_allowed: 'Этот материал кладут здания, а не лопата.',
   too_many_edits: 'Слишком большая правка за раз.',
+  uneven_ground: 'Земля здесь слишком неровная. Подровняй площадку или поищи ровное место.',
+  needs_land: 'Это место в воде. Дом ставят на сушу.',
+  needs_water: 'Пирс стоит над водой. Поставь его у берега.',
+  requires_missing: 'Сначала нужно построить то, из чего это получится.',
+  no_such_building: 'Такого здания здесь уже нет.',
+  still_building: 'Здание ещё строится. Оно скоро будет готово.',
+  max_level: 'Дальше улучшать некуда — и так хорошо.',
+  no_work_here: 'Здесь не работают, здесь живут.',
+  crew_full: 'Смена уже полная. Освободи место или поставь ещё одно здание.',
+  no_beds: 'Тут негде ночевать.',
+  home_full: 'Все кровати заняты. Построй ещё один дом.',
 };
 
 export class Editing {
@@ -49,8 +68,11 @@ export class Editing {
     private readonly canvas: HTMLCanvasElement,
     private readonly picker: Picker,
     private readonly highlight: Highlight,
+    private readonly ghost: Ghost,
     private readonly bus: CommandBus,
+    private readonly world: LiveWorld,
     private readonly onPlantsChanged: () => void,
+    private readonly onBuildingsChanged: () => void,
   ) {
     this.bind();
   }
@@ -68,8 +90,19 @@ export class Editing {
 
     const onDown = (event: PointerEvent): void => {
       // Левая кнопка без модификаторов: остальное забирает камера.
-      if (event.button !== 0 || event.altKey || this.store.mode === 'look') return;
+      if (event.button !== 0 || event.altKey) return;
       if (this.spaceHeld) return;
+
+      if (this.store.mode === 'look') {
+        this.selectUnderCursor();
+        return;
+      }
+
+      if (this.store.mode === 'build') {
+        void this.placeBuilding();
+        event.preventDefault();
+        return;
+      }
 
       this.painting = true;
       this.lastPainted = '';
@@ -109,10 +142,22 @@ export class Editing {
         Digit2: 'dig',
         Digit3: 'fill',
         Digit4: 'plant',
+        Digit5: 'build',
       };
       const mode = modes[event.code];
       if (mode !== undefined) {
         this.store.setMode(mode);
+        return;
+      }
+
+      if (event.code === 'Escape') {
+        this.store.setMode('look');
+        this.store.selectBuilding(null);
+        return;
+      }
+
+      if (event.code === 'KeyR' && this.store.mode === 'build') {
+        this.store.rotateBuild();
         return;
       }
 
@@ -153,6 +198,14 @@ export class Editing {
   /** Подсветка обновляется каждый кадр: под курсором мог измениться и мир, и режим. */
   updateHighlight(): void {
     const state = this.store;
+
+    if (state.mode === 'build') {
+      this.highlight.hide();
+      this.updateGhost();
+      return;
+    }
+    this.ghost.hide();
+
     if (this.pointer === null || state.mode === 'look') {
       this.highlight.hide();
       return;
@@ -208,6 +261,157 @@ export class Editing {
       t: 'terraform',
       edits: cells.slice(0, MAX_TERRAFORM_EDITS).map((cell) => ({ pos: cell, mat: material })),
     };
+  }
+
+  /** Какое здание сейчас на курсоре: новое из панели или то, которое переносим. */
+  private get pendingTypeId(): string | null {
+    const state = this.store;
+    if (state.movingBuildingId === null) return state.buildTypeId;
+    const moving = this.world.state.buildings.find(
+      (building) => building.id === state.movingBuildingId,
+    );
+    return moving?.typeId ?? null;
+  }
+
+  /** Куда встанет здание: угол участка и уровень земли под ним. */
+  private placementAt(
+    typeId: string,
+    rotation: 0 | 1 | 2 | 3,
+  ): { x: number; y: number; z: number } | null {
+    if (this.pointer === null) return null;
+
+    const hit = this.picker.at(
+      this.pointer.x,
+      this.pointer.y,
+      this.canvas.clientWidth,
+      this.canvas.clientHeight,
+    );
+    if (hit === null) return null;
+
+    const type = buildingType(typeId);
+    if (type === undefined) return null;
+
+    // Курсор держит здание за середину: так проще целиться, чем углом.
+    const size = footprintOf(type, rotation);
+    const x = hit.x - Math.floor(size.w / 2);
+    const z = hit.z - Math.floor(size.d / 2);
+
+    // Пол здания ложится на самую низкую клетку участка, иначе угол повиснет в воздухе.
+    let lowest = Infinity;
+    for (let dz = 0; dz < size.d; dz += 1) {
+      for (let dx = 0; dx < size.w; dx += 1) {
+        if (!isInsideWorld(x + dx, 0, z + dz)) return null;
+        const surface = surfaceHeight(this.world, x + dx, z + dz, WORLD_Y - 1);
+        lowest = Math.min(lowest, surface);
+      }
+    }
+    if (!Number.isFinite(lowest)) return null;
+
+    return { x, y: lowest + 1, z };
+  }
+
+  private buildCommandAt(pos: { x: number; y: number; z: number }): Command | null {
+    const state = this.store;
+    const rot = state.buildRotation;
+
+    if (state.movingBuildingId !== null) {
+      return { t: 'move_building', id: state.movingBuildingId, pos, rot };
+    }
+    if (state.buildTypeId === null) return null;
+    return { t: 'place_building', typeId: state.buildTypeId, pos, rot };
+  }
+
+  private updateGhost(): void {
+    const typeId = this.pendingTypeId;
+    if (typeId === null || this.pointer === null) {
+      this.ghost.hide();
+      return;
+    }
+
+    const pos = this.placementAt(typeId, this.store.buildRotation);
+    if (pos === null) {
+      this.ghost.hide();
+      return;
+    }
+
+    const command = this.buildCommandAt(pos);
+    const valid = command !== null && this.bus.preview(command).ok;
+    this.ghost.show(typeId, pos, this.store.buildRotation, valid);
+  }
+
+  private async placeBuilding(): Promise<void> {
+    const typeId = this.pendingTypeId;
+    if (typeId === null) {
+      this.store.setNotice('Выбери, что построить, в панели снизу');
+      return;
+    }
+
+    const pos = this.placementAt(typeId, this.store.buildRotation);
+    if (pos === null) return;
+
+    const command = this.buildCommandAt(pos);
+    if (command === null) return;
+
+    const outcome = await this.bus.run(command);
+    if (!outcome.result.ok) {
+      this.store.setNotice(this.explain(outcome.result.reason, typeId));
+      return;
+    }
+
+    this.onBuildingsChanged();
+    if (this.store.movingBuildingId !== null) {
+      this.store.startMoving(null);
+      this.store.setNotice('Переехали. Это ничего не стоило');
+    }
+  }
+
+  /**
+   * Отказ по-человечески. «Не хватает 6 досок» вместо кода — и сразу видно,
+   * что делать дальше (§8 ТЗ).
+   */
+  private explain(reason: RejectReason, typeId: string): string {
+    if (reason === 'cannot_afford') {
+      const type = buildingType(typeId);
+      if (type !== undefined) {
+        return shortageText(
+          missingResources(this.world.state.resources, type.cost),
+          this.world.state.buildings,
+        );
+      }
+    }
+    if (reason === 'occupied') return 'Здесь уже стоит здание. Поставь рядом.';
+    return REJECT_TEXT[reason] ?? 'Сюда не встанет. Попробуй чуть в стороне.';
+  }
+
+  /** Клик в режиме «смотрю» открывает карточку здания под курсором. */
+  private selectUnderCursor(): void {
+    if (this.pointer === null) return;
+
+    const hit = this.picker.at(
+      this.pointer.x,
+      this.pointer.y,
+      this.canvas.clientWidth,
+      this.canvas.clientHeight,
+    );
+    if (hit === null) {
+      this.store.selectBuilding(null);
+      return;
+    }
+
+    // Здания не воксели, поэтому попадание считается по участку, а не по геометрии.
+    const found = this.world.state.buildings.find((building) => {
+      const type = buildingType(building.typeId);
+      if (type === undefined) return false;
+      const size = footprintOf(type, building.rotation);
+      return (
+        hit.x >= building.x &&
+        hit.x < building.x + size.w &&
+        hit.z >= building.z &&
+        hit.z < building.z + size.d
+      );
+    });
+
+    this.store.selectBuilding(found?.id ?? null);
   }
 
   private async paint(): Promise<void> {

@@ -121,7 +121,7 @@ export type BuildingTypeId = string;
 /** Идентификатор из каталога растений. Сужается до ключей каталога на M2.4. */
 export type PlantId = string;
 
-export type PausedReason = 'storage_full' | 'no_input' | 'no_worker';
+export type PausedReason = 'storage_full' | 'no_input' | 'no_worker' | 'no_source';
 
 export interface Building {
   id: string;

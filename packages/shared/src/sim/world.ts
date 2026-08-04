@@ -1,4 +1,5 @@
-import type { PlantId, Vec3, WorldPatch } from '../types';
+import type { PlantId, ResourceId, Vec3, WorldPatch } from '../types';
+import { BASE_STORAGE_CAP, startingResources, storageCap, type PlacedBuilding } from './economy';
 import { chunkOfVoxel, isInsideWorld, voxelIndex, WORLD_X, WORLD_Z } from '../voxels';
 
 /**
@@ -14,6 +15,16 @@ export interface WorldState {
   edits: Map<number, number>;
   plants: PlantInstance[];
   nextPlantId: number;
+  buildings: PlacedBuilding[];
+  nextBuildingId: number;
+  resources: Record<ResourceId, number>;
+  /** Вместимость склада: 200 плюс по 150 за амбар (§4 ТЗ). */
+  storageCap: number;
+  /**
+   * Остаток в залежах — тоже разница с генерацией: записан только тот запас,
+   * который уже отличается от исходного. Нетронутая залежь здесь не числится.
+   */
+  nodes: Map<string, number>;
 }
 
 export interface PlantInstance {
@@ -39,17 +50,57 @@ export interface VoxelChange {
   previous: number;
 }
 
+/**
+ * Изменение одного здания. Хранится и «до», и «после»: без прежнего состояния
+ * отмену не развернуть, а отменяемость — пункт устава.
+ */
+export interface BuildingChange {
+  id: string;
+  /** Пусто — здание только что появилось. */
+  before?: PlacedBuilding;
+  /** Пусто — здание снесли. */
+  after?: PlacedBuilding;
+}
+
+/** Изменение остатка в залежи. Прежнее значение хранится ради отмены, как и у вокселей. */
+export interface NodeChange {
+  id: string;
+  amount: number;
+  previous: number;
+}
+
 /** Что команда сделала с миром. Клиент и сервер применяют это одинаково. */
 export interface CommandEffect {
   voxels: VoxelChange[];
   plantsAdded: PlantInstance[];
   plantsRemoved: string[];
+  buildings: BuildingChange[];
+  /** Изменение склада: положительное — прибыло, отрицательное — списано. */
+  resources: Partial<Record<ResourceId, number>>;
+  nodes: NodeChange[];
 }
 
-export const EMPTY_EFFECT: CommandEffect = { voxels: [], plantsAdded: [], plantsRemoved: [] };
+export const EMPTY_EFFECT: CommandEffect = {
+  voxels: [],
+  plantsAdded: [],
+  plantsRemoved: [],
+  buildings: [],
+  resources: {},
+  nodes: [],
+};
 
 export function createWorldState(seed: number): WorldState {
-  return { seed, edits: new Map(), plants: [], nextPlantId: 1 };
+  return {
+    seed,
+    edits: new Map(),
+    plants: [],
+    nextPlantId: 1,
+    buildings: [],
+    nextBuildingId: 1,
+    resources: startingResources(),
+    storageCap: BASE_STORAGE_CAP,
+    nodes: new Map(),
+  };
 }
 
 /**
@@ -82,10 +133,40 @@ export function commitEffect(
     const number = Number.parseInt(plant.id.replace('plant-', ''), 10);
     if (Number.isFinite(number) && number >= state.nextPlantId) state.nextPlantId = number + 1;
   }
+
+  for (const change of effect.buildings) {
+    const index = state.buildings.findIndex((building) => building.id === change.id);
+    if (change.after === undefined) {
+      if (index >= 0) state.buildings.splice(index, 1);
+      continue;
+    }
+    if (index >= 0) state.buildings[index] = change.after;
+    else state.buildings.push(change.after);
+
+    const number = Number.parseInt(change.id.replace('building-', ''), 10);
+    if (Number.isFinite(number) && number >= state.nextBuildingId)
+      state.nextBuildingId = number + 1;
+  }
+
+  // Вместимость меняется вместе с амбарами, поэтому пересчитывается до раскладки ресурсов.
+  state.storageCap = storageCap(state.buildings);
+
+  for (const [id, delta] of Object.entries(effect.resources) as [ResourceId, number][]) {
+    const value = state.resources[id] + delta;
+    // Переполнение ничего не теряет: производство встанет, а уже добытое останется.
+    state.resources[id] = Math.max(0, Math.min(value, state.storageCap));
+  }
+
+  for (const change of effect.nodes) state.nodes.set(change.id, change.amount);
 }
 
 /** Обратный результат: применив его, мир вернётся в прежнее состояние. */
 export function invertEffect(effect: CommandEffect): CommandEffect {
+  const resources: Partial<Record<ResourceId, number>> = {};
+  for (const [id, delta] of Object.entries(effect.resources) as [ResourceId, number][]) {
+    resources[id] = -delta;
+  }
+
   return {
     voxels: effect.voxels.map((change) => ({
       index: change.index,
@@ -94,6 +175,17 @@ export function invertEffect(effect: CommandEffect): CommandEffect {
     })),
     plantsAdded: [],
     plantsRemoved: effect.plantsAdded.map((plant) => plant.id),
+    buildings: effect.buildings.map((change) => ({
+      id: change.id,
+      ...(change.after === undefined ? {} : { before: change.after }),
+      ...(change.before === undefined ? {} : { after: change.before }),
+    })),
+    resources,
+    nodes: effect.nodes.map((change) => ({
+      id: change.id,
+      amount: change.previous,
+      previous: change.amount,
+    })),
   };
 }
 

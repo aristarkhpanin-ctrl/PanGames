@@ -1,6 +1,7 @@
 import {
   commitEffect,
   createWorldState,
+  storageCap,
   dirtyChunks,
   fromWorldPatches,
   invertEffect,
@@ -9,7 +10,9 @@ import {
   Material,
   type CommandEffect,
   type GeneratedIsland,
+  type PlacedBuilding,
   type PlantInstance,
+  type ResourceId,
   type WorldPatch,
   type VoxelChange,
   type WorldReader,
@@ -69,17 +72,38 @@ export class LiveWorld implements WorldReader {
   }
 
   /** Восстанавливает мир из сохранённой разницы. */
-  restore(patches: readonly WorldPatch[], plants: readonly PlantInstance[]): WorldUpdate {
-    fromWorldPatches(this.state, patches);
+  restore(saved: {
+    patches: readonly WorldPatch[];
+    plants: readonly PlantInstance[];
+    buildings?: readonly PlacedBuilding[];
+    resources?: Partial<Record<ResourceId, number>>;
+    nodes?: readonly [string, number][];
+  }): WorldUpdate {
+    fromWorldPatches(this.state, saved.patches);
     for (const [index, material] of this.state.edits) this.voxels[index] = material;
 
-    this.state.plants = [...plants];
-    for (const plant of plants) {
+    this.state.plants = [...saved.plants];
+    for (const plant of saved.plants) {
       const number = Number.parseInt(plant.id.replace('plant-', ''), 10);
       if (Number.isFinite(number) && number >= this.state.nextPlantId) {
         this.state.nextPlantId = number + 1;
       }
     }
+
+    this.state.buildings = (saved.buildings ?? []).map((building) => ({ ...building }));
+    for (const building of this.state.buildings) {
+      const number = Number.parseInt(building.id.replace('building-', ''), 10);
+      if (Number.isFinite(number) && number >= this.state.nextBuildingId) {
+        this.state.nextBuildingId = number + 1;
+      }
+    }
+
+    // Вместимость выводится из зданий, а не хранится: амбар мог быть снесён между сессиями.
+    this.state.storageCap = storageCap(this.state.buildings);
+    for (const [id, amount] of Object.entries(saved.resources ?? {}) as [ResourceId, number][]) {
+      this.state.resources[id] = amount;
+    }
+    this.state.nodes = new Map(saved.nodes ?? []);
 
     const changes = [...this.state.edits.entries()].map(([index, material]) => ({
       index,
