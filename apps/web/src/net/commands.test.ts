@@ -1,7 +1,9 @@
 import {
   ACCEPTED,
+  createWorldState,
   generateIsland,
   Material,
+  voxelIndex,
   WORLD_X,
   type Command,
   type ValidationResult,
@@ -9,14 +11,14 @@ import {
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { LiveWorld } from '../state/liveWorld';
-import { CommandBus, LocalTransport, type CommandTransport } from './commands';
+import { CommandBus, LocalTransport, NetworkTransport, type CommandTransport } from './commands';
 
 /**
  * Проверка шины команд, и прежде всего отката.
  *
- * Локальный транспорт всегда подтверждает, поэтому откат при живой игре не срабатывает.
- * На M5.6 он станет основным путём при расхождении с сервером — и там ему нельзя быть
- * единственным непроверенным местом.
+ * Локальный транспорт всегда подтверждает; настоящий откат случается с сетевым, когда
+ * сервер не согласен с предсказанием. Это и есть самое хрупкое место всего клиента:
+ * ошибка здесь означает, что игрок видит не тот мир, в котором живёт.
  */
 
 const SEED = 42;
@@ -147,5 +149,92 @@ describe('CommandBus', () => {
     }
 
     expect(world.plants).toHaveLength(4);
+  });
+});
+
+describe('сетевой транспорт', () => {
+  it('отдаёт вердикт сервера как есть', async () => {
+    const transport = new NetworkTransport('island-1', () =>
+      Promise.resolve({ outcomes: [{ result: { ok: false, reason: 'cannot_afford' } }] }),
+    );
+
+    expect(await transport.submit(dig)).toEqual({ ok: false, reason: 'cannot_afford' });
+  });
+
+  it('при пропавшей связи держит то, что игрок уже видит', async () => {
+    // Молчание сети — не отказ. Мир вернётся целиком при переподключении, а мигать
+    // построенным зданием из-за одного пакета незачем.
+    const transport = new NetworkTransport('island-1', () => Promise.resolve(null));
+    expect(await transport.submit(dig)).toEqual(ACCEPTED);
+  });
+
+  it('откатывает ровно одну команду, а не всю очередь', async () => {
+    const world = freshWorld();
+    let answer: ValidationResult = ACCEPTED;
+
+    const bus = new CommandBus(
+      world,
+      new NetworkTransport('island-1', () => Promise.resolve({ outcomes: [{ result: answer }] })),
+      () => undefined,
+    );
+
+    await bus.run({ t: 'plant', pos: { x: cell.x, y: 0, z: cell.z }, kind: 'flower_pink' });
+    await bus.run({ t: 'plant', pos: { x: cell.x + 2, y: 0, z: cell.z }, kind: 'flower_pink' });
+    expect(world.plants).toHaveLength(2);
+
+    answer = { ok: false, reason: 'occupied' };
+    await bus.run({ t: 'plant', pos: { x: cell.x + 4, y: 0, z: cell.z }, kind: 'flower_pink' });
+
+    // Отклонённая исчезла, две принятые остались на месте.
+    expect(world.plants).toHaveLength(2);
+    expect(world.plants.map((plant) => plant.x)).toEqual([cell.x, cell.x + 2]);
+  });
+
+  it('очередь команд применяется и подтверждается по порядку', async () => {
+    const world = freshWorld();
+    const seen: number[] = [];
+
+    const bus = new CommandBus(
+      world,
+      new NetworkTransport('island-1', (_island, commands) => {
+        const command = commands[0];
+        if (command?.t === 'plant') seen.push(command.pos.x);
+        return Promise.resolve({ outcomes: [{ result: ACCEPTED }] });
+      }),
+      () => undefined,
+    );
+
+    await Promise.all(
+      [0, 2, 4].map((offset) =>
+        bus.run({ t: 'plant', pos: { x: cell.x + offset, y: 0, z: cell.z }, kind: 'flower_pink' }),
+      ),
+    );
+
+    expect(seen).toEqual([cell.x, cell.x + 2, cell.x + 4]);
+    expect(world.plants).toHaveLength(3);
+  });
+});
+
+describe('согласование с сервером', () => {
+  it('расхождение сходится за один приём состояния', () => {
+    const world = freshWorld();
+
+    // Клиент выкопал яму, которой сервер не признал.
+    const bus = new CommandBus(world, new LocalTransport(), () => undefined);
+    void bus.run(dig);
+    expect(world.material(cell.x, cell.y, cell.z)).toBe(Material.AIR);
+
+    // Сервер прислал своё состояние: там этой ямы нет, зато есть его собственная правка.
+    const authoritative = createWorldState(SEED);
+    const otherIndex = voxelIndex(cell.x + 3, cell.y, cell.z);
+    authoritative.edits.set(otherIndex, Material.PATH);
+
+    const update = world.adopt(authoritative);
+
+    expect(world.material(cell.x, cell.y, cell.z)).not.toBe(Material.AIR);
+    expect(world.material(cell.x + 3, cell.y, cell.z)).toBe(Material.PATH);
+    // Перестраиваются только задетые чанки — сцена не пересобирается целиком.
+    expect(update.dirty.size).toBeGreaterThan(0);
+    expect(update.dirty.size).toBeLessThan(10);
   });
 });

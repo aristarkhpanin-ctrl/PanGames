@@ -1,7 +1,7 @@
 import './fonts.css';
 import './styles.css';
 
-import { checkServerHealth } from './net/health';
+import { createIsland, fetchIsland, fetchIslands, fetchMe } from './net/api';
 import { createScene } from './render/scene';
 import { useGameStore } from './state/store';
 import { mountHud } from './ui/mount';
@@ -13,17 +13,42 @@ if (!canvas || !hud) {
   throw new Error('В разметке страницы нет канваса #scene или контейнера #hud');
 }
 
-/**
- * Сид острова. На M5 он приедет с сервера вместе с состоянием острова;
- * пока его можно задать в адресе — ?seed=123 — чтобы смотреть разные острова.
- */
-const seedParam = new URLSearchParams(window.location.search).get('seed');
-const seed = seedParam === null ? 42 : Number.parseInt(seedParam, 10) || 42;
-
 mountHud(hud);
 
-void createScene(canvas, seed);
+/**
+ * Вход в игру (M5.3).
+ *
+ * Мир считает сервер, поэтому первым делом выясняется, кто пришёл. Без сессии показывается
+ * не ошибка, а спокойное приглашение: игра начинается с адреса почты, а не с отказа.
+ */
+async function boot(canvasElement: HTMLCanvasElement): Promise<void> {
+  const store = useGameStore.getState();
 
-void checkServerHealth().then((ok) => {
-  useGameStore.getState().setServerStatus(ok ? 'online' : 'unreachable');
-});
+  const me = await fetchMe();
+  if (me === null) {
+    store.setSession(null);
+    return;
+  }
+
+  store.setSession(me);
+
+  // Первый вход — остров заводится сам. Спрашивать имя до того, как человек увидел море,
+  // значит начинать игру с формы.
+  const islands = await fetchIslands();
+  const chosen = islands[0] ?? (await createIsland('Гавань'));
+  if (chosen === null) {
+    store.setNotice('Сервер не отвечает. Всё сохранено, попробуй обновить страницу');
+    return;
+  }
+
+  const state = await fetchIsland(chosen.id);
+  if (state === null) {
+    store.setNotice('Не получилось открыть остров. Обнови страницу через минуту');
+    return;
+  }
+
+  store.setIsland({ id: chosen.id, name: chosen.name });
+  await createScene(canvasElement, state);
+}
+
+void boot(canvas);

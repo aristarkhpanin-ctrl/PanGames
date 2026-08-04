@@ -24,19 +24,47 @@ export interface CommandTransport {
 }
 
 /**
- * Локальный исполнитель: сам себе сервер. Живёт до появления настоящего (M5).
+ * Локальный исполнитель: сам себе сервер. Остался для тестов шины и для песочницы,
+ * где сервера нет вовсе.
  *
  * Он подтверждает команду, а не проверяет её заново, и это не упрощение, а необходимость:
  * состояние у него общее с клиентом, и к моменту ответа команда уже применена. Повторная
  * проверка судила бы о мире, где команда уже случилась — посадка увидела бы собственный
  * цветок и отклонила сама себя.
  *
- * Настоящий сервер (M5.4) держит своё состояние и проверяет команду ДО того, как применит,
- * поэтому такой беды у него не будет.
+ * Настоящий сервер держит своё состояние и проверяет команду ДО того, как применит,
+ * поэтому такой беды у него нет.
  */
 export class LocalTransport implements CommandTransport {
   submit(_command: Command): Promise<ValidationResult> {
     return Promise.resolve(ACCEPTED);
+  }
+}
+
+/**
+ * Сетевой исполнитель (M5.6). Ровно та замена, ради которой шина была написана на M2.1:
+ * ни строчки в остальном клиенте не поменялось.
+ *
+ * Клиент уже применил команду и показал результат; сервер отвечает следом. Если он не
+ * согласен — шина сама развернёт правку назад, мягко и без окон.
+ */
+export class NetworkTransport implements CommandTransport {
+  constructor(
+    private readonly islandId: string,
+    private readonly send: (
+      islandId: string,
+      commands: readonly Command[],
+    ) => Promise<{ outcomes: { result: ValidationResult }[] } | null>,
+  ) {}
+
+  async submit(command: Command): Promise<ValidationResult> {
+    const response = await this.send(this.islandId, [command]);
+
+    // Сервер не ответил вовсе: связь пропала. Держим то, что игрок уже видит, —
+    // при переподключении полное состояние приедет заново и всё расставит по местам.
+    if (response === null) return ACCEPTED;
+
+    return response.outcomes[0]?.result ?? ACCEPTED;
   }
 }
 

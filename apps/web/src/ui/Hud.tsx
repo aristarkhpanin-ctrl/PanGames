@@ -5,6 +5,7 @@ import { FILL_MATERIALS } from '../input/editing';
 import { BuildBar } from './BuildBar';
 import { BuildingCard } from './BuildingCard';
 import { ResourceBar } from './ResourceBar';
+import { SignIn } from './SignIn';
 import { VillagerCard, VillagerColumn } from './VillagerCard';
 import { useGameStore, type EditMode } from '../state/store';
 
@@ -38,6 +39,8 @@ export function Hud(): React.JSX.Element {
   const selectedId = useGameStore((state) => state.selectedVillager);
   const buildings = useGameStore((state) => state.buildings);
   const moving = useGameStore((state) => state.movingBuildingId);
+  const session = useGameStore((state) => state.session);
+  const serverStatus = useGameStore((state) => state.serverStatus);
   const notice = useGameStore((state) => state.notice);
   const noticeAt = useGameStore((state) => state.noticeAt);
   const setNotice = useGameStore((state) => state.setNotice);
@@ -58,6 +61,9 @@ export function Hud(): React.JSX.Element {
   const plant = PLANTS[plantIndex % PLANTS.length];
   const fillName = FILL_LABEL[fillIndex % FILL_LABEL.length] ?? 'землю';
   const fillColor = FILL_MATERIALS[fillIndex % FILL_MATERIALS.length];
+
+  if (session === undefined) return <></>;
+  if (session === null) return <SignIn />;
 
   return (
     <>
@@ -112,6 +118,12 @@ export function Hud(): React.JSX.Element {
           {' · Ctrl+Z отменить'}
         </span>
       </div>
+
+      {serverStatus === 'unreachable' && (
+        <p className="hud-link" role="status">
+          Связь пропала. Остров на месте, всё вернётся само
+        </p>
+      )}
 
       {notice !== null && <p className="hud-notice">{notice}</p>}
     </>

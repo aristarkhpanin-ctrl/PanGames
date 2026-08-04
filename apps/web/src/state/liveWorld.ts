@@ -1,18 +1,14 @@
 import {
   commitEffect,
   createWorldState,
-  storageCap,
   dirtyChunks,
-  fromWorldPatches,
   invertEffect,
   toWorldPatches,
   voxelIndex,
   Material,
   type CommandEffect,
   type GeneratedIsland,
-  type PlacedBuilding,
   type PlantInstance,
-  type ResourceId,
   type WorldPatch,
   type VoxelChange,
   type WorldReader,
@@ -26,14 +22,14 @@ export interface WorldUpdate {
 }
 
 /**
- * Живой мир на клиенте: результат генерации плюс уже применённые правки.
+ * Живой мир на клиенте: результат генерации плюс правки, приехавшие с сервера.
  *
  * Массив вокселей держится развёрнутым, потому что по нему идут и мешинг, и пикинг.
- * Сохраняется при этом только разница с генерацией (§9 ТЗ) — она весит килобайты.
+ * По сети при этом ходит только разница с генерацией (§9 ТЗ) — она весит килобайты.
  */
 export class LiveWorld implements WorldReader {
   readonly voxels: Uint8Array;
-  readonly state: WorldState;
+  state: WorldState;
 
   /**
    * Мир, каким его выдал генератор. Нужен, чтобы разница оставалась разницей: отменённая
@@ -71,45 +67,29 @@ export class LiveWorld implements WorldReader {
     return toWorldPatches(this.state);
   }
 
-  /** Восстанавливает мир из сохранённой разницы. */
-  restore(saved: {
-    patches: readonly WorldPatch[];
-    plants: readonly PlantInstance[];
-    buildings?: readonly PlacedBuilding[];
-    resources?: Partial<Record<ResourceId, number>>;
-    nodes?: readonly [string, number][];
-  }): WorldUpdate {
-    fromWorldPatches(this.state, saved.patches);
-    for (const [index, material] of this.state.edits) this.voxels[index] = material;
+  /**
+   * Принимает состояние, посчитанное сервером: оно и есть правда (§9 ТЗ).
+   *
+   * Воксели переписываются под новое состояние — и те, что появились, и те, что вернулись
+   * к исходному виду; иначе на экране осталась бы яма, которой в мире уже нет.
+   */
+  adopt(state: WorldState): WorldUpdate {
+    const changes: VoxelChange[] = [];
 
-    this.state.plants = [...saved.plants];
-    for (const plant of saved.plants) {
-      const number = Number.parseInt(plant.id.replace('plant-', ''), 10);
-      if (Number.isFinite(number) && number >= this.state.nextPlantId) {
-        this.state.nextPlantId = number + 1;
-      }
+    for (const [index, material] of this.state.edits) {
+      if (state.edits.get(index) === material) continue;
+      const restored = this.baseline[index] ?? Material.AIR;
+      this.voxels[index] = restored;
+      changes.push({ index, material: restored, previous: material });
     }
 
-    this.state.buildings = (saved.buildings ?? []).map((building) => ({ ...building }));
-    for (const building of this.state.buildings) {
-      const number = Number.parseInt(building.id.replace('building-', ''), 10);
-      if (Number.isFinite(number) && number >= this.state.nextBuildingId) {
-        this.state.nextBuildingId = number + 1;
-      }
+    for (const [index, material] of state.edits) {
+      if (this.voxels[index] === material) continue;
+      changes.push({ index, material, previous: this.voxels[index] ?? Material.AIR });
+      this.voxels[index] = material;
     }
 
-    // Вместимость выводится из зданий, а не хранится: амбар мог быть снесён между сессиями.
-    this.state.storageCap = storageCap(this.state.buildings);
-    for (const [id, amount] of Object.entries(saved.resources ?? {}) as [ResourceId, number][]) {
-      this.state.resources[id] = amount;
-    }
-    this.state.nodes = new Map(saved.nodes ?? []);
-
-    const changes = [...this.state.edits.entries()].map(([index, material]) => ({
-      index,
-      material,
-      previous: material,
-    }));
+    this.state = state;
     return { changes, dirty: dirtyChunks(changes) };
   }
 }

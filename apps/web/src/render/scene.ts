@@ -1,22 +1,23 @@
 import {
+  fromSnapshot,
   generateIsland,
-  hourOfTick,
-  TICKS_PER_HOUR,
   VOXEL_SIZE,
   WORLD_X,
   WORLD_Z,
+  type ResourceId,
 } from '@gavan/shared';
 import * as THREE from 'three';
 
 import { CameraControls } from '../input/controls';
 import { Editing, REJECT_TEXT } from '../input/editing';
 import { Picker } from '../input/picking';
-import { CommandBus, LocalTransport } from '../net/commands';
+import type { IslandState } from '../net/api';
+import { sendCommands } from '../net/api';
+import { CommandBus, NetworkTransport } from '../net/commands';
+import { LiveLink, type LiveMessage } from '../net/live';
 import { LiveWorld, type WorldUpdate } from '../state/liveWorld';
-import { loadWorld, saveWorld } from '../state/localSave';
-import { EconomyDriver, publishEconomy } from '../sim/economyDriver';
-import { SimClient } from '../sim/simClient';
 import { useGameStore } from '../state/store';
+import { VillagerStream } from '../sim/villagerStream';
 import { BuildingRenderer } from './buildingRenderer';
 import { DebugOverlay } from './debugOverlay';
 import { Decor } from './decor';
@@ -30,26 +31,24 @@ import { Terrain } from './terrain';
 import { Water } from './water';
 
 /**
- * Сборка сцены: остров из сида, чанки из воркеров, вода, деревья, свет, камера и редактирование.
+ * Сборка сцены: остров с сервера, чанки из воркеров, вода, деревья, свет, камера и правки.
  *
- * Всё тяжёлое живёт вне главного потока: генерация занимает около 70 мс один раз при входе,
- * мешинг целиком уезжает в воркеры (§2.4, §12 ТЗ).
+ * Считает мир сервер (M5): он единственный двигает время, производство и жителей. Клиент
+ * рисует, предсказывает команды и сглаживает движение между тиками. Всё тяжёлое живёт вне
+ * главного потока: мешинг целиком уезжает в воркеры (§2.4, §12 ТЗ).
  */
 
 /** Реальных секунд в игровом часе (§3 ТЗ). Игровые сутки — 24 минуты. */
 const SECONDS_PER_GAME_HOUR = 60;
 
-/** Как долго ждать затишья, прежде чем записать мир. Протяжка кистью шлёт правки пачками. */
-const SAVE_DELAY_MS = 700;
-
-/** С какого часа начинается первый день на новом острове: девять утра (§3 ТЗ). */
-const START_TICK = 9 * TICKS_PER_HOUR;
-
 export interface SceneHandle {
   dispose(): void;
 }
 
-export async function createScene(canvas: HTMLCanvasElement, seed: number): Promise<SceneHandle> {
+export async function createScene(
+  canvas: HTMLCanvasElement,
+  initial: IslandState,
+): Promise<SceneHandle> {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.shadowMap.enabled = true;
   // PCFSoftShadowMap в three объявлен устаревшим и всё равно откатывается к PCF.
@@ -60,14 +59,12 @@ export async function createScene(canvas: HTMLCanvasElement, seed: number): Prom
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(50, 1, 0.5, 400);
 
-  const island = generateIsland(seed);
+  const island = generateIsland(initial.seed);
   const world = new LiveWorld(island);
 
-  // Сохранённый мир поднимается до всего остального: и мешер, и симуляция получают уже
+  // Состояние приезжает с сервера до всего остального: и мешер, и пикинг получают уже
   // готовый остров, и строить его дважды не приходится.
-  const saved = loadWorld(seed);
-  if (saved !== null) world.restore(saved);
-  const startTick = saved?.tick ?? START_TICK;
+  world.adopt(fromSnapshot(initial.world));
 
   const pool = new MesherPool(world.voxels);
   const terrain = new Terrain(pool);
@@ -93,22 +90,11 @@ export async function createScene(canvas: HTMLCanvasElement, seed: number): Prom
     ghost.group,
   );
 
-  // Симуляция целиком в воркере: поиск пути не имеет права задержать кадр (§12 ТЗ).
-  const sim = new SimClient(world.voxels, seed, 'island-local', startTick);
-  sim.subscribe((villagers) => {
-    useGameStore.getState().setVillagers(villagers);
-  });
-
-  let saveTimer: ReturnType<typeof setTimeout> | null = null;
-  const scheduleSave = (): void => {
-    if (saveTimer !== null) clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => {
-      saveWorld(world, sim.tick);
-    }, SAVE_DELAY_MS);
-  };
+  const stream = new VillagerStream();
+  stream.accept(initial.villagers);
 
   /**
-   * Правка мира: копии в воркерах догоняют главный поток, и перестраиваются только
+   * Правка мира: копия в воркерах догоняет главный поток, и перестраиваются только
    * задетые чанки — вместе с соседними, если правка легла у самой границы.
    */
   const onWorldChanged = (update: WorldUpdate): void => {
@@ -120,26 +106,25 @@ export async function createScene(canvas: HTMLCanvasElement, seed: number): Prom
         materials[i] = change.material;
       });
       pool.applyEdits(indices, materials);
-      sim.applyEdits(indices, materials);
     }
 
     if (update.dirty.size > 0) void terrain.rebuild(update.dirty);
     plants.rebuild(world.plants);
-    scheduleSave();
   };
 
-  const bus = new CommandBus(world, new LocalTransport(), onWorldChanged);
+  const bus = new CommandBus(world, new NetworkTransport(initial.id, sendCommands), onWorldChanged);
   const picker = new Picker(camera, world);
 
-  /** Здания изменились: перерисовать их и рассказать об этом воркеру симуляции. */
-  const onBuildingsChanged = (): void => {
-    buildingRenderer.rebuild(world.state.buildings);
-    sim.setWorld(world.state.buildings, world.plants);
-    publishEconomy(world);
-    scheduleSave();
+  const publish = (): void => {
+    useGameStore
+      .getState()
+      .setEconomy({ ...world.state.resources }, world.state.storageCap, [...world.state.buildings]);
   };
 
-  const economy = new EconomyDriver(world, bus, island.resourceNodes, onBuildingsChanged);
+  const onBuildingsChanged = (): void => {
+    buildingRenderer.rebuild(world.state.buildings);
+    publish();
+  };
 
   /**
    * Как интерфейс отправляет команды. React ничего не знает про шину и не имеет права
@@ -153,6 +138,7 @@ export async function createScene(canvas: HTMLCanvasElement, seed: number): Prom
       }
       const text = REJECT_TEXT[outcome.result.reason];
       if (text !== undefined) useGameStore.getState().setNotice(text);
+      onBuildingsChanged();
     });
   });
 
@@ -165,11 +151,58 @@ export async function createScene(canvas: HTMLCanvasElement, seed: number): Prom
     world,
     () => {
       plants.rebuild(world.plants);
-      sim.setWorld(world.state.buildings, world.plants);
-      scheduleSave();
     },
     onBuildingsChanged,
   );
+
+  let hour = initial.hour;
+
+  /**
+   * Тик с сервера: он решает, что стало с миром. Клиентское предсказание при расхождении
+   * поправляется дельтой — сцена не пересобирается, картинка не мигает.
+   */
+  const onMessage = (message: LiveMessage): void => {
+    if (message.type === 'hello') {
+      // Переподключились: полное состояние приезжает разом и всё расставляет по местам.
+      world.adopt(fromSnapshot(message.world));
+      stream.accept(message.villagers);
+      hour = message.hour;
+      debug.hour = hour;
+      onBuildingsChanged();
+      plants.rebuild(world.plants);
+      useGameStore.getState().setTick(message.tick);
+      return;
+    }
+
+    stream.accept(message.villagers);
+    useGameStore.getState().setVillagers(message.villagers);
+    useGameStore.getState().setTick(message.tick);
+
+    world.state.buildings = message.buildings;
+    for (const [id, amount] of Object.entries(message.resources) as [ResourceId, number][]) {
+      world.state.resources[id] = amount;
+    }
+    world.state.storageCap = message.storageCap;
+
+    if (debug.timeRunning) {
+      hour = message.hour;
+      debug.hour = hour;
+    }
+
+    onBuildingsChanged();
+  };
+
+  const link = new LiveLink(initial.id, {
+    onMessage,
+    onStatus: (status) => {
+      useGameStore
+        .getState()
+        .setServerStatus(
+          status === 'online' ? 'online' : status === 'offline' ? 'unreachable' : 'unknown',
+        );
+    },
+  });
+  link.connect();
 
   const resize = (): void => {
     const width = canvas.clientWidth;
@@ -187,9 +220,6 @@ export async function createScene(canvas: HTMLCanvasElement, seed: number): Prom
   const observer = new ResizeObserver(resize);
   observer.observe(canvas);
 
-  // Часы у жителей и у солнца одни: житель решает по `hourOfTick`, а свет и производство —
-  // по этому числу, и расходиться им нельзя.
-  let hour = hourOfTick(startTick);
   debug.hour = hour;
 
   // THREE.Clock объявлен устаревшим; своё время надёжнее и не тянет лишний класс.
@@ -204,6 +234,7 @@ export async function createScene(canvas: HTMLCanvasElement, seed: number): Prom
     const delta = Math.min((now - previous) / 1000, 0.1);
     previous = now;
 
+    // Между тиками солнце идёт само: сервер задаёт час, клиент доводит его до следующего.
     if (debug.timeRunning) {
       hour = (hour + delta / SECONDS_PER_GAME_HOUR) % 24;
       debug.hour = hour;
@@ -214,11 +245,8 @@ export async function createScene(canvas: HTMLCanvasElement, seed: number): Prom
     controls.update(delta);
     editing.updateHighlight();
 
-    const alpha = sim.update(delta, (tick) => {
-      useGameStore.getState().setTick(tick);
-      economy.step(tick, hour, sim.villagers);
-    });
-    villagerRenderer.update(sim.villagers, sim.previousVillagers, alpha, delta);
+    const alpha = stream.update(delta);
+    villagerRenderer.update(stream.villagers, stream.previousVillagers, alpha, delta);
     const sky = lighting.update(hour, controls.focus);
     water.update(delta, sky);
 
@@ -230,9 +258,9 @@ export async function createScene(canvas: HTMLCanvasElement, seed: number): Prom
 
   plants.rebuild(world.plants);
   buildingRenderer.rebuild(world.state.buildings);
-  sim.setWorld(world.state.buildings, world.plants);
-  publishEconomy(world);
-  useGameStore.getState().setTick(startTick);
+  publish();
+  useGameStore.getState().setVillagers(initial.villagers);
+  useGameStore.getState().setTick(initial.tick);
 
   // Меши приезжают по мере готовности: остров проявляется чанк за чанком, а не после паузы.
   await terrain.buildAll();
@@ -241,16 +269,15 @@ export async function createScene(canvas: HTMLCanvasElement, seed: number): Prom
   return {
     dispose(): void {
       cancelAnimationFrame(frameId);
-      if (saveTimer !== null) clearTimeout(saveTimer);
       observer.disconnect();
       useGameStore.getState().setSender(null);
+      link.dispose();
       editing.dispose();
       controls.dispose();
       debug.dispose();
       highlight.dispose();
       ghost.dispose();
       buildingRenderer.dispose();
-      sim.dispose();
       villagerRenderer.dispose();
       plants.dispose();
       terrain.dispose();

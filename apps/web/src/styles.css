@@ -497,3 +497,95 @@ body {
   border-color: transparent;
   opacity: 0.7;
 }
+
+/* Экран входа. Паролей нет — только адрес почты и ссылка в письме (§1 ТЗ). */
+.gate {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(180deg, #0e4f63 0%, #093846 100%);
+}
+
+.gate-card {
+  width: min(420px, calc(100vw - 40px));
+  padding: calc(28px * var(--ui-scale));
+  border-radius: 16px;
+  background: rgb(11 26 42 / 55%);
+  color: var(--sand);
+}
+
+.gate-title {
+  margin: 0 0 calc(12px * var(--ui-scale));
+  font-family: var(--font-display);
+  font-size: calc(26px * var(--ui-scale));
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+
+.gate-line {
+  margin: 0 0 calc(16px * var(--ui-scale));
+  font-size: calc(15px * var(--ui-scale));
+  line-height: calc(22px * var(--ui-scale));
+}
+
+.gate-form {
+  display: flex;
+  gap: calc(8px * var(--ui-scale));
+}
+
+.gate-input {
+  flex: 1;
+  min-width: 0;
+  padding: calc(9px * var(--ui-scale)) calc(12px * var(--ui-scale));
+  border: 1px solid rgb(234 217 176 / 25%);
+  border-radius: 9px;
+  background: rgb(255 255 255 / 6%);
+  color: var(--sand);
+  font: inherit;
+  font-size: calc(14px * var(--ui-scale));
+}
+
+.gate-input::placeholder {
+  color: rgb(234 217 176 / 45%);
+}
+
+.gate-button {
+  padding: calc(9px * var(--ui-scale)) calc(16px * var(--ui-scale));
+  border: 0;
+  border-radius: 9px;
+  background: var(--lamp);
+  color: #2a2113;
+  font: inherit;
+  font-size: calc(14px * var(--ui-scale));
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.gate-button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.gate-hint {
+  margin: calc(14px * var(--ui-scale)) 0 0;
+  font-size: calc(13px * var(--ui-scale));
+  line-height: calc(19px * var(--ui-scale));
+  opacity: 0.6;
+}
+
+/* Разрыв связи — спокойная строка, а не тревога (§8 ТЗ). */
+.hud-link {
+  position: absolute;
+  top: calc(20px * var(--ui-scale));
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: calc(6px * var(--ui-scale)) calc(14px * var(--ui-scale));
+  border-radius: 999px;
+  background: rgb(11 26 42 / 62%);
+  color: var(--sand);
+  font-size: calc(13px * var(--ui-scale));
+  opacity: 0.85;
+}

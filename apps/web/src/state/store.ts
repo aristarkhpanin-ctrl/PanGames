@@ -9,12 +9,32 @@ import { create } from 'zustand';
 
 export type ServerStatus = 'unknown' | 'online' | 'unreachable';
 
+export interface Session {
+  id: string;
+  email: string;
+}
+
+export interface IslandInfo {
+  id: string;
+  name: string;
+}
+
 /** Что делает левая кнопка мыши. */
 export type EditMode = 'look' | 'dig' | 'fill' | 'plant' | 'build';
 
 interface GameState {
   serverStatus: ServerStatus;
   setServerStatus: (status: ServerStatus) => void;
+
+  /**
+   * Кто вошёл. `undefined` — ещё выясняем, `null` — не вошёл никто.
+   * Разница важна: пока выясняем, показывать приглашение войти рано.
+   */
+  session: Session | null | undefined;
+  setSession: (session: Session | null) => void;
+
+  island: IslandInfo | null;
+  setIsland: (island: IslandInfo | null) => void;
 
   /** Остров сгенерирован и все чанки отрисованы. */
   worldReady: boolean;
@@ -96,6 +116,16 @@ export const useGameStore = create<GameState>()((set) => ({
   serverStatus: 'unknown',
   setServerStatus: (serverStatus) => {
     set({ serverStatus });
+  },
+
+  session: undefined,
+  setSession: (session) => {
+    set({ session });
+  },
+
+  island: null,
+  setIsland: (island) => {
+    set({ island });
   },
 
   worldReady: false,
