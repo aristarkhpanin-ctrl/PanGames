@@ -98,7 +98,7 @@ body {
   align-items: center;
   padding: calc(9px * var(--ui-scale)) calc(16px * var(--ui-scale));
   border-radius: 999px;
-  background: rgb(11 26 42 / 62%);
+  background: rgb(11 26 42 / 72%);
   color: var(--sand);
   font-size: calc(13px * var(--ui-scale));
   line-height: calc(18px * var(--ui-scale));
@@ -208,7 +208,7 @@ body {
   padding: calc(5px * var(--ui-scale)) calc(10px * var(--ui-scale));
   border: 0;
   border-radius: 999px;
-  background: rgb(11 26 42 / 58%);
+  background: rgb(11 26 42 / 72%);
   color: var(--sand);
   font: inherit;
   font-size: calc(13px * var(--ui-scale));
@@ -225,10 +225,17 @@ body {
   border-radius: 5px;
 }
 
-/* Настроение читается формой, а не только цветом: дальтоник должен различать его тоже. */
+/*
+ * Настроение читается формой, а не цветом и не прозрачностью: и дальтоник, и чёрно-белый
+ * снимок должны различать все пять состояний (§8 ТЗ).
+ *
+ * Пять форм подобраны так, чтобы отличаться силуэтом, а не деталью: ромб, круг, квадрат,
+ * полоска и кольцо. Отличать состояния одной лишь прозрачностью нельзя — в чёрно-белом
+ * снимке «задумчив» и «грустит» сливались бы в одну и ту же полоску.
+ */
 .column-mood {
-  width: 9px;
-  height: 9px;
+  width: calc(10px * var(--ui-scale));
+  height: calc(10px * var(--ui-scale));
   background: currentcolor;
 }
 
@@ -241,18 +248,18 @@ body {
 }
 
 .mood-calm {
-  border-radius: 2px;
+  border-radius: 1px;
 }
 
 .mood-thoughtful {
-  height: 3px;
-  border-radius: 2px;
+  height: calc(3px * var(--ui-scale));
+  border-radius: 999px;
 }
 
 .mood-sad {
-  height: 3px;
-  border-radius: 2px;
-  opacity: 0.5;
+  border: calc(2px * var(--ui-scale)) solid currentcolor;
+  border-radius: 50%;
+  background: none;
 }
 
 /* Карточка жителя. Настроение здесь словом, процентов нет нигде. */
@@ -344,7 +351,7 @@ body {
   padding: calc(7px * var(--ui-scale)) calc(12px * var(--ui-scale));
   border: 0;
   border-radius: 10px;
-  background: rgb(11 26 42 / 58%);
+  background: rgb(11 26 42 / 72%);
   color: var(--sand);
   font: inherit;
   font-size: calc(13px * var(--ui-scale));
@@ -511,7 +518,7 @@ body {
   width: min(420px, calc(100vw - 40px));
   padding: calc(28px * var(--ui-scale));
   border-radius: 16px;
-  background: rgb(11 26 42 / 55%);
+  background: rgb(11 26 42 / 72%);
   color: var(--sand);
 }
 
@@ -584,7 +591,7 @@ body {
   margin: 0;
   padding: calc(6px * var(--ui-scale)) calc(14px * var(--ui-scale));
   border-radius: 999px;
-  background: rgb(11 26 42 / 62%);
+  background: rgb(11 26 42 / 72%);
   color: var(--sand);
   font-size: calc(13px * var(--ui-scale));
   opacity: 0.85;
@@ -657,19 +664,28 @@ body {
 }
 
 /* Кнопка дневника. Ни счётчика непрочитанного, ни значка: читают, когда хочется. */
-.journal-button {
+/* Верхний правый угол: размер интерфейса и дневник. Обход с клавиатуры идёт слева направо. */
+.hud-top {
   position: absolute;
   top: calc(20px * var(--ui-scale));
   right: calc(16px * var(--ui-scale));
+  display: flex;
+  gap: calc(8px * var(--ui-scale));
+  align-items: center;
+}
+
+.journal-button,
+.scale-button {
   padding: calc(6px * var(--ui-scale)) calc(14px * var(--ui-scale));
   border: 0;
   border-radius: 999px;
-  background: rgb(11 26 42 / 58%);
+  background: rgb(11 26 42 / 72%);
   color: var(--sand);
   font: inherit;
   font-size: calc(13px * var(--ui-scale));
   cursor: pointer;
 }
+
 
 /* Дневник острова (§8 ТЗ). Единственное место в игре, где живёт Caveat. */
 .journal {
@@ -794,7 +810,7 @@ body {
   padding: calc(5px * var(--ui-scale)) calc(11px * var(--ui-scale));
   border: 0;
   border-radius: 999px;
-  background: rgb(11 26 42 / 45%);
+  background: rgb(11 26 42 / 72%);
   color: var(--sand);
   font: inherit;
   font-size: calc(12px * var(--ui-scale));

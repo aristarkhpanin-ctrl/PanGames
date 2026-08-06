@@ -6,9 +6,13 @@ import { rotateBox } from './buildingRenderer';
 /**
  * Призрак здания под курсором (M4.2).
  *
- * Полупрозрачная форма показывает, что именно встанет и как оно повёрнуто, а цвет отвечает
- * на единственный вопрос перед нажатием: встанет или нет. Никаких значков и подписей —
- * ответ читается сразу (§8 ТЗ).
+ * Полупрозрачная форма показывает, что именно встанет и как оно повёрнуто, а вид контура
+ * отвечает на единственный вопрос перед нажатием: встанет или нет. Никаких значков
+ * и подписей — ответ читается сразу (§8 ТЗ).
+ *
+ * Отказ обозначен не только цветом, но и формой: по участку ложится перечёркивание.
+ * Восемь процентов мужчин не различают тёплый и розовый, и для них цвет не сообщает ничего
+ * (§8 ТЗ, доступность).
  */
 export class Ghost {
   readonly group = new THREE.Group();
@@ -27,12 +31,15 @@ export class Ghost {
 
   private readonly frame = new THREE.LineSegments(new THREE.BufferGeometry(), this.frameMaterial);
 
+  /** Перечёркивание участка: показывается вместо контура, когда здание не встанет. */
+  private readonly cross = new THREE.LineSegments(new THREE.BufferGeometry(), this.frameMaterial);
+
   private readonly meshes: THREE.Mesh[] = [];
   private shownFor = '';
 
   constructor() {
     this.group.visible = false;
-    this.group.add(this.frame);
+    this.group.add(this.frame, this.cross);
     this.group.renderOrder = 2;
   }
 
@@ -60,6 +67,7 @@ export class Ghost {
     const color = valid ? Palette.lamp : Palette.bloom;
     this.material.color.setHex(color);
     this.frameMaterial.color.setHex(color);
+    this.cross.visible = !valid;
     this.group.visible = true;
   }
 
@@ -97,12 +105,15 @@ export class Ghost {
     const size = footprintOf(type, rotation);
     this.frame.geometry.dispose();
     this.frame.geometry = footprintOutline(size.w, size.d);
+    this.cross.geometry.dispose();
+    this.cross.geometry = footprintCross(size.w, size.d);
   }
 
   dispose(): void {
     for (const mesh of this.meshes) mesh.geometry.dispose();
     this.meshes.length = 0;
     this.frame.geometry.dispose();
+    this.cross.geometry.dispose();
     this.frameMaterial.dispose();
     this.material.dispose();
   }
@@ -131,5 +142,19 @@ function footprintOutline(w: number, d: number): THREE.BufferGeometry {
 
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  return geometry;
+}
+
+/** Перечёркивание участка. Отказ должен читаться и в чёрно-белом кадре (§8 ТЗ). */
+function footprintCross(w: number, d: number): THREE.BufferGeometry {
+  const y = 0.03;
+  const x1 = w * VOXEL_SIZE;
+  const z1 = d * VOXEL_SIZE;
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute(
+    'position',
+    new THREE.Float32BufferAttribute([0, y, 0, x1, y, z1, x1, y, 0, 0, y, z1], 3),
+  );
   return geometry;
 }

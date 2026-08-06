@@ -20,15 +20,29 @@ export function ResourceBar(): React.JSX.Element {
     : KEY_RESOURCES;
 
   return (
-    <button type="button" className="resource-bar" onClick={toggle}>
-      {shown.map((id) => (
-        <span key={id} className="resource">
-          <b className={resources[id] >= cap ? 'resource-value resource-full' : 'resource-value'}>
-            {Math.floor(resources[id])}
-          </b>
-          <span className="resource-label">{RESOURCE_LABEL[id]}</span>
-        </span>
-      ))}
+    <button
+      type="button"
+      className="resource-bar"
+      onClick={toggle}
+      aria-label={open ? 'Склад целиком. Нажми, чтобы свернуть' : 'Склад. Нажми, чтобы показать всё'}
+      aria-expanded={open}
+    >
+      {shown.map((id) => {
+        // «Склад полон» — словом, а не одним цветом: цифра, окрашенная в тёплый, ничего
+        // не сообщает тому, кто цвет не различает (§8 ТЗ, доступность).
+        const full = resources[id] >= cap;
+        return (
+          <span key={id} className="resource">
+            <b className={full ? 'resource-value resource-full' : 'resource-value'}>
+              {Math.floor(resources[id])}
+            </b>
+            <span className="resource-label">
+              {RESOURCE_LABEL[id]}
+              {full && <i className="resource-note"> полно</i>}
+            </span>
+          </span>
+        );
+      })}
       <span className="resource-more">{open ? 'свернуть' : 'ещё'}</span>
     </button>
   );

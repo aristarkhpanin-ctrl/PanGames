@@ -155,6 +155,42 @@ interface GameState {
   notice: string | null;
   noticeAt: number;
   setNotice: (text: string | null) => void;
+
+  /**
+   * Масштаб интерфейса: 100, 125 или 150% (§8 ТЗ). Хранится рядом с браузером — это
+   * свойство глаз, а не острова, и переезжать с острова на остров ему незачем.
+   */
+  uiScale: number;
+  cycleUiScale: () => void;
+
+  /**
+   * Esc закрывает верхнее открытое окно, а не всё сразу. Возвращает `true`, если было
+   * что закрывать: тогда клавиша считается использованной и режим не сбрасывается.
+   */
+  closeTop: () => boolean;
+}
+
+/** Доступные масштабы интерфейса. Ниже 100% не бывает: мельче — это не доступность. */
+export const UI_SCALES: readonly number[] = [1, 1.25, 1.5];
+
+const UI_SCALE_KEY = 'gavan.uiScale';
+
+function savedScale(): number {
+  try {
+    const stored = Number(window.localStorage.getItem(UI_SCALE_KEY));
+    return UI_SCALES.includes(stored) ? stored : 1;
+  } catch {
+    return 1;
+  }
+}
+
+function applyScale(scale: number): void {
+  try {
+    window.localStorage.setItem(UI_SCALE_KEY, String(scale));
+  } catch {
+    // Приватный режим: масштаб просто не переживёт перезагрузку.
+  }
+  document.documentElement.style.setProperty('--ui-scale', String(scale));
 }
 
 export const useGameStore = create<GameState>()((set) => ({
@@ -313,4 +349,39 @@ export const useGameStore = create<GameState>()((set) => ({
   setNotice: (notice) => {
     set({ notice, noticeAt: Date.now() });
   },
+
+  uiScale: savedScale(),
+  cycleUiScale: () => {
+    set((state) => {
+      const next = UI_SCALES[(UI_SCALES.indexOf(state.uiScale) + 1) % UI_SCALES.length] ?? 1;
+      applyScale(next);
+      return { uiScale: next };
+    });
+  },
+
+  closeTop: () => {
+    // Порядок обратный тому, в каком окна ложатся друг на друга: сверху вниз.
+    const state = useGameStore.getState();
+
+    if (state.catchUp !== null) {
+      set({ catchUp: null });
+      return true;
+    }
+    if (state.journalOpen) {
+      set({ journalOpen: false });
+      return true;
+    }
+    if (state.selectedVillager !== null) {
+      set({ selectedVillager: null });
+      return true;
+    }
+    if (state.selectedBuilding !== null) {
+      set({ selectedBuilding: null });
+      return true;
+    }
+    return false;
+  },
 }));
+
+// Масштаб применяется сразу при запуске: иначе первый кадр показывался бы в чужом размере.
+applyScale(useGameStore.getState().uiScale);

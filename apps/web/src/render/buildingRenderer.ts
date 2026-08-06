@@ -2,6 +2,7 @@ import {
   buildingType,
   footprintOf,
   materialColor,
+  Palette,
   VOXEL_SIZE,
   type PlacedBuilding,
   type ShapeBox,
@@ -21,9 +22,34 @@ export class BuildingRenderer {
   readonly group = new THREE.Group();
   private readonly meshes: THREE.Mesh[] = [];
 
+  /**
+   * Метки над зданиями, которые сейчас не работают. Значок, а не оттенок: перекрасить дом
+   * значило бы сообщить новость только тем, кто различает оттенки (§8 ТЗ, доступность).
+   */
+  private readonly marks = new THREE.Group();
+
+  private readonly markGeometry = new THREE.RingGeometry(
+    VOXEL_SIZE * 0.28,
+    VOXEL_SIZE * 0.42,
+    12,
+  );
+
+  private readonly markMaterial = new THREE.MeshBasicMaterial({
+    color: Palette.sand,
+    transparent: true,
+    opacity: 0.85,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+
+  constructor() {
+    this.group.add(this.marks);
+  }
+
   /** Полная пересборка. Зданий не больше 250, и учёт по одному дороже пересборки. */
   rebuild(buildings: readonly PlacedBuilding[]): void {
     this.clear();
+    this.markPaused(buildings);
 
     // Коробки собираются в одну геометрию на материал: 250 зданий укладываются
     // в единицы вызовов отрисовки вместо тысяч.
@@ -89,6 +115,34 @@ export class BuildingRenderer {
     }
   }
 
+  /**
+   * Кольцо над домом, который сейчас отдыхает: некому работать, нечего обрабатывать
+   * или склад полон. Это новость, а не беда, поэтому метка тихая и одна на все причины —
+   * что именно случилось, объясняет карточка здания словами (устав, п. 8).
+   */
+  private markPaused(buildings: readonly PlacedBuilding[]): void {
+    this.marks.clear();
+
+    for (const building of buildings) {
+      if (building.progress < 1 || building.pausedReason === undefined) continue;
+
+      const type = buildingType(building.typeId);
+      if (type === undefined) continue;
+
+      const size = footprintOf(type, building.rotation);
+      const height = Math.max(...type.shape.map((box) => box.y + box.h), 1);
+
+      const mark = new THREE.Mesh(this.markGeometry, this.markMaterial);
+      mark.position.set(
+        (building.x + size.w / 2) * VOXEL_SIZE,
+        (building.y + height + 1.2) * VOXEL_SIZE,
+        (building.z + size.d / 2) * VOXEL_SIZE,
+      );
+      mark.rotation.x = -Math.PI / 2;
+      this.marks.add(mark);
+    }
+  }
+
   private clear(): void {
     for (const mesh of this.meshes) {
       this.group.remove(mesh);
@@ -100,6 +154,9 @@ export class BuildingRenderer {
 
   dispose(): void {
     this.clear();
+    this.marks.clear();
+    this.markGeometry.dispose();
+    this.markMaterial.dispose();
   }
 }
 

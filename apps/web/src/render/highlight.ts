@@ -35,11 +35,16 @@ export class Highlight {
     }
 
     const positions: number[] = [];
-    for (const cell of cells) addBoxEdges(positions, cell.x, cell.y, cell.z);
+    for (const cell of cells) {
+      addBoxEdges(positions, cell.x, cell.y, cell.z);
+      // Отказ обозначен формой, а не только цветом: рамка перечёркивается по верхней грани.
+      // Иначе для тех, кто не различает тёплый и розовый, «нельзя» выглядит как «можно».
+      if (!valid) addTopCross(positions, cell.x, cell.y, cell.z);
+    }
 
     this.geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
     this.geometry.computeBoundingSphere();
-    // Отказ показывается цветом рамки, а не всплывающим окном.
+    // Отказ показывается видом рамки, а не всплывающим окном.
     this.material.color.setHex(valid ? Palette.lamp : Palette.bloom);
     this.object.visible = true;
   }
@@ -74,6 +79,18 @@ export class Highlight {
     this.geometry.dispose();
     this.material.dispose();
   }
+}
+
+/** Крест по верхней грани клетки. Читается и без цвета, и в чёрно-белом кадре. */
+function addTopCross(out: number[], x: number, y: number, z: number): void {
+  const pad = 0.012;
+  const top = (y + 1) * VOXEL_SIZE + pad;
+  const x0 = x * VOXEL_SIZE - pad;
+  const z0 = z * VOXEL_SIZE - pad;
+  const x1 = (x + 1) * VOXEL_SIZE + pad;
+  const z1 = (z + 1) * VOXEL_SIZE + pad;
+
+  out.push(x0, top, z0, x1, top, z1, x1, top, z0, x0, top, z1);
 }
 
 /** Двенадцать рёбер куба одной клетки, чуть раздутых, чтобы рамка не тонула в поверхности. */

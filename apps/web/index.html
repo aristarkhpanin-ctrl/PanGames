@@ -11,8 +11,17 @@
     <title>Гавань</title>
   </head>
   <body>
-    <canvas id="scene" aria-label="Остров" role="img"></canvas>
-    <div id="hud"></div>
+    <!--
+      Канвас помечен как картинка с подписью, а не как приложение: всё, что на нём происходит,
+      продублировано текстом в HUD — жители, склад, дневник. Экранный диктор читает их, а не
+      пытается пересказать сцену (§8 ТЗ).
+    -->
+    <canvas
+      id="scene"
+      role="img"
+      aria-label="Остров: море, берег и дома. Всё, что на нём происходит, есть словами в панелях рядом"
+    ></canvas>
+    <main id="hud" aria-label="Гавань"></main>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

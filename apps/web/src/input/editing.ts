@@ -149,6 +149,14 @@ export class Editing {
         return;
       }
 
+      // Esc работает и в гостях: закрыть карточку жителя нужно всем одинаково.
+      if (event.code === 'Escape') {
+        // Сначала закрывается верхнее открытое окно, и только когда закрывать нечего —
+        // сбрасывается режим. Иначе Esc делал бы два дела разом и одно из них незаметно.
+        if (!this.store.closeTop() && !this.store.guest) this.store.setMode('look');
+        return;
+      }
+
       if (this.store.guest) return;
 
       const modes: Partial<Record<string, EditMode>> = {
@@ -161,12 +169,6 @@ export class Editing {
       const mode = modes[event.code];
       if (mode !== undefined) {
         this.store.setMode(mode);
-        return;
-      }
-
-      if (event.code === 'Escape') {
-        this.store.setMode('look');
-        this.store.selectBuilding(null);
         return;
       }
 
