@@ -2,11 +2,14 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import { Hud } from './Hud';
+import { Trouble } from './Trouble';
 
 export function mountHud(container: HTMLElement): void {
   createRoot(container).render(
     <StrictMode>
-      <Hud />
+      <Trouble>
+        <Hud />
+      </Trouble>
     </StrictMode>,
   );
 }

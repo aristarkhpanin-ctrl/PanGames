@@ -1094,3 +1094,40 @@ body {
   color: var(--lamp);
   font-weight: 500;
 }
+
+/*
+ * Экран «сломались панели» (§11 ТЗ). Не красный, не с восклицательным знаком и не с кодом
+ * ошибки: сообщение говорит, что остров цел, и предлагает единственное осмысленное действие.
+ */
+.trouble {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: flex;
+  flex-direction: column;
+  gap: calc(14px * var(--ui-scale));
+  align-items: center;
+  padding: calc(22px * var(--ui-scale)) calc(26px * var(--ui-scale));
+  border-radius: 14px;
+  background: rgb(11 26 42 / 88%);
+  color: var(--sand);
+  transform: translate(-50%, -50%);
+}
+
+.trouble-line {
+  margin: 0;
+  font-size: calc(15px * var(--ui-scale));
+}
+
+.trouble-button {
+  min-height: calc(40px * var(--ui-scale));
+  padding: calc(8px * var(--ui-scale)) calc(20px * var(--ui-scale));
+  border: 0;
+  border-radius: 999px;
+  background: var(--lamp);
+  color: #1b2a10;
+  font: inherit;
+  font-size: calc(13px * var(--ui-scale));
+  font-weight: 500;
+  cursor: pointer;
+}

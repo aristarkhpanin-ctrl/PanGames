@@ -1,0 +1,41 @@
+# Сервер «Гавани» на Fly.io (§1 ТЗ).
+#
+# Платформа выбрана из-за постоянного процесса: тики уходят игрокам по WebSocket, и режим
+# «поднялся на запрос, ответил, уснул» здесь не работает. По той же причине машина
+# не останавливается при простое — иначе живые острова замирали бы посреди дня.
+#
+# База — managed Postgres той же площадки: `fly postgres create` и `fly postgres attach`,
+# после чего DATABASE_URL появляется в секретах сам.
+#
+# Секреты задаются один раз и в файл не попадают:
+#   fly secrets set SESSION_SECRET=… WEB_ORIGIN=https://гавань.example PUBLIC_URL=https://…
+
+app = 'gavan'
+primary_region = 'fra'
+
+[build]
+  dockerfile = 'apps/server/Dockerfile'
+
+[env]
+  NODE_ENV = 'production'
+  HOST = '0.0.0.0'
+  PORT = '3000'
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  # Ноль машин означал бы, что остров без игрока перестаёт существовать между заходами.
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    interval = '30s'
+    timeout = '5s'
+    grace_period = '20s'
+    method = 'GET'
+    path = '/health'
+
+[[vm]]
+  size = 'shared-cpu-1x'
+  memory = '512mb'

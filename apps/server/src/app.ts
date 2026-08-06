@@ -9,8 +9,10 @@ import { createDb, type Database } from './db/client';
 import { IslandRuntime } from './island/runtime';
 import { ConsoleMail, type MailTransport } from './mail/transport';
 import { registerAuthRoutes, SESSION_COOKIE } from './routes/auth';
+import { registerErrorHandling } from './routes/errors';
 import { registerGuestRoutes } from './routes/guests';
 import { MAX_BODY_BYTES, registerIslandRoutes } from './routes/islands';
+import { registerStatsRoutes } from './routes/stats';
 import { registerWebSocket } from './ws/hub';
 
 /** Чем подменяют внешний мир тесты: своя база и своя почта. */
@@ -46,10 +48,13 @@ export async function createApp(config: Config, parts?: AppParts): Promise<Fasti
   const runtime = new IslandRuntime(database.db);
   runtime.start();
 
+  registerErrorHandling(app);
+
   app.get('/health', () => ({ ok: true }));
   registerAuthRoutes(app, database.db, config, mail);
   registerIslandRoutes(app, database.db, runtime);
   registerGuestRoutes(app, database.db, runtime);
+  registerStatsRoutes(app, database.db);
   await registerWebSocket(app, database.db, runtime);
 
   app.addHook('onClose', async () => {

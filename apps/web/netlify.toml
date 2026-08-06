@@ -1,0 +1,33 @@
+# Клиент «Гавани» — статика (§1 ТЗ). Ни серверного рендеринга, ни функций: всё,
+# что нужно от хостинга, — отдавать файлы и возвращать index.html на любой адрес.
+
+[build]
+  base = "apps/web"
+  command = "pnpm install --frozen-lockfile && pnpm build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+  # Иначе сборка возьмёт отладочную версию React — см. docs/perf.md, раздел M9.
+  NODE_ENV = "production"
+
+# Гость приходит по адресу вида /?code=ABCDEF — маршрутов на сервере нет, всё решает клиент.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    # Имена файлов с хешем: содержимое по такому адресу не меняется никогда.
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "no-referrer"
+    # Внешних скриптов в игре нет и не будет: ни аналитики, ни пикселей (§11 ТЗ).
+    # Адрес сервера подставляется при сборке, поэтому connect-src задаётся вместе с ним.
+    Content-Security-Policy = "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; font-src 'self'; worker-src 'self' blob:; connect-src 'self' https: wss:; frame-ancestors 'none'"

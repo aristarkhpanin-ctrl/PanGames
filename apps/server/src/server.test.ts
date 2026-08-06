@@ -766,3 +766,115 @@ describe.skipIf(!available)('друзья', () => {
     expect(Object.keys(friends[0] ?? {})).toEqual(['code', 'name']);
   });
 });
+
+/**
+ * Запуск (§11 ТЗ): приватность и аналитика. Это не обещание в документации, а проверка —
+ * обещание тихо перестаёт быть правдой при первой же правке, а тест падает.
+ */
+describe.skipIf(!available)('приватность и аналитика', () => {
+  it('в гостевом снимке нет ни почты, ни идентификаторов людей', async () => {
+    const owner = await signIn('privacy-owner@example.com');
+    const id = await makeIsland(owner);
+    const island = await app.inject({
+      method: 'GET',
+      url: `/islands/${id}`,
+      headers: { cookie: owner },
+    });
+    const code = island.json<{ visitCode: string }>().visitCode;
+
+    const guest = await signIn('privacy-guest@example.com');
+    const seen = await app.inject({
+      method: 'GET',
+      url: `/islands/by-code/${code}`,
+      headers: { cookie: guest },
+    });
+
+    const body = seen.body;
+    expect(seen.statusCode).toBe(200);
+    expect(body).not.toContain('privacy-owner@example.com');
+    expect(body).not.toContain('@example.com');
+    expect(body).not.toContain('ownerId');
+    expect(body).not.toContain('owner_id');
+  });
+
+  it('данные острова не отдаются никому, кроме владельца', async () => {
+    const owner = await signIn('mine@example.com');
+    const id = await makeIsland(owner);
+
+    const stranger = await signIn('stranger@example.com');
+    const peek = await app.inject({
+      method: 'GET',
+      url: `/islands/${id}`,
+      headers: { cookie: stranger },
+    });
+
+    expect(peek.statusCode).toBe(403);
+  });
+
+  it('аналитика состоит только из чисел: ни почты, ни идентификаторов', async () => {
+    const cookie = await signIn('counted@example.com');
+    await makeIsland(cookie);
+
+    const response = await app.inject({ method: 'GET', url: '/stats' });
+    expect(response.statusCode).toBe(200);
+
+    const stats = response.json<Record<string, unknown>>();
+    expect(Object.keys(stats).sort()).toEqual([
+      'activeToday',
+      'averageBuildings',
+      'chapters',
+      'islands',
+      'players',
+      'visits',
+    ]);
+
+    // Всё, что не «главы», — число. «Главы» — числа по номеру главы. Строк нет нигде,
+    // а значит, ни имени, ни почты, ни идентификатора сюда не пролезет.
+    for (const [key, value] of Object.entries(stats)) {
+      if (key === 'chapters') {
+        for (const share of Object.values(value as Record<string, unknown>)) {
+          expect(typeof share).toBe('number');
+        }
+        continue;
+      }
+      expect(typeof value).toBe('number');
+    }
+
+    expect(response.body).not.toContain('@');
+  });
+
+  it('ошибка сервера не показывает игроку ни стека, ни устройства базы', async () => {
+    // Отдельный экземпляр: к уже слушающему серверу маршрут не прицепить, а ломать
+    // настоящий ради проверки — плохая идея.
+    const config = { ...loadConfig(), NODE_ENV: 'test' as const, DATABASE_URL: TEST_URL };
+    const broken = await createApp(config, {
+      db: drizzle(sql),
+      close: () => Promise.resolve(),
+      mail: new MemoryMail(),
+    });
+    broken.get('/сломайся', () => {
+      throw new Error('таблица island_state недоступна: connect ECONNREFUSED 10.0.0.5:5432');
+    });
+    await broken.ready();
+
+    const response = await broken.inject({ method: 'GET', url: '/сломайся' });
+    const body = response.json<{ error: string; id?: string }>();
+
+    expect(response.statusCode).toBe(500);
+    expect(body.error).toBe('Что-то не сложилось на нашей стороне. Остров цел, попробуй ещё раз');
+    // Ни адреса, ни имени таблицы, ни стека — но идентификатор запроса есть, чтобы
+    // жалобу «у меня не открылось» можно было найти в логе.
+    expect(response.body).not.toContain('ECONNREFUSED');
+    expect(response.body).not.toContain('island_state');
+    expect(response.body).not.toContain('at Object');
+    expect(body.id).toBeTruthy();
+
+    await broken.close();
+  });
+
+  it('несуществующий адрес объясняется словами, а не кодом', async () => {
+    const response = await app.inject({ method: 'GET', url: '/такого-нет' });
+    expect(response.statusCode).toBe(404);
+    expect(response.json<{ error: string }>().error).toContain('Такой страницы нет');
+  });
+});
