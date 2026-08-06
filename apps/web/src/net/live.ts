@@ -29,6 +29,10 @@ export interface TickMessage {
   resources: Record<string, number>;
   storageCap: number;
   buildings: PlacedBuilding[];
+  /** Новые записи дневника за этот тик. Обычно пусто. */
+  journal?: { kind: string; text: string; actors: string[] }[];
+  /** Новая глава, если она наступила прямо сейчас. */
+  chapter?: { number: number; name: string };
 }
 
 export type LiveMessage = HelloMessage | TickMessage;

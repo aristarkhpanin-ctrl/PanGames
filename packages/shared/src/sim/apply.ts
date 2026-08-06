@@ -4,6 +4,7 @@ import type { ResourceId } from '../types';
 import { WORLD_Y, voxelIndex } from '../voxels';
 import { deriveSeed } from '../worldgen/rng';
 import { footprintOf, refundOf, upgradeCost, type PlacedBuilding } from './economy';
+import { FESTIVAL_COST, FESTIVAL_INSPIRATION } from './festival';
 import {
   EMPTY_EFFECT,
   surfaceHeight,
@@ -125,6 +126,14 @@ export function applyCommand(
       return {
         ...EMPTY_EFFECT,
         buildings: reassign(state, command.villagerId, command.buildingId, 'residents'),
+      };
+
+    case 'host_festival':
+      // Праздник тратит еду и рождает вдохновение (§7 ТЗ). Само гулянье живёт в тике:
+      // он разводит жителей к огню, а команда лишь оплачивает вечер.
+      return {
+        ...EMPTY_EFFECT,
+        resources: { ...negate(FESTIVAL_COST), inspiration: FESTIVAL_INSPIRATION },
       };
 
     default:

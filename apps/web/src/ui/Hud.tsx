@@ -5,8 +5,10 @@ import { FILL_MATERIALS } from '../input/editing';
 import { BuildBar } from './BuildBar';
 import { BuildingCard } from './BuildingCard';
 import { ResourceBar } from './ResourceBar';
+import { Journal } from './Journal';
 import { SignIn } from './SignIn';
 import { Welcome } from './Welcome';
+import { ChapterTitle } from './ChapterTitle';
 import { VillagerCard, VillagerColumn } from './VillagerCard';
 import { useGameStore, type EditMode } from '../state/store';
 
@@ -41,6 +43,9 @@ export function Hud(): React.JSX.Element {
   const buildings = useGameStore((state) => state.buildings);
   const moving = useGameStore((state) => state.movingBuildingId);
   const session = useGameStore((state) => state.session);
+  const watching = useGameStore((state) => state.watching);
+  const journalOpen = useGameStore((state) => state.journalOpen);
+  const toggleJournal = useGameStore((state) => state.toggleJournal);
   const serverStatus = useGameStore((state) => state.serverStatus);
   const notice = useGameStore((state) => state.notice);
   const noticeAt = useGameStore((state) => state.noticeAt);
@@ -66,6 +71,10 @@ export function Hud(): React.JSX.Element {
   if (session === undefined) return <></>;
   if (session === null) return <SignIn />;
 
+  // Режим «Смотреть»: интерфейс не сворачивается, а уходит целиком (§8 ТЗ).
+  // Название главы остаётся: оно и есть то, ради чего смотрят.
+  if (watching) return <ChapterTitle />;
+
   return (
     <>
       <div className="hud-corner">
@@ -74,11 +83,17 @@ export function Hud(): React.JSX.Element {
         {worldReady && <ResourceBar />}
       </div>
 
+      <button type="button" className="journal-button" onClick={toggleJournal}>
+        {journalOpen ? 'закрыть дневник' : 'дневник'}
+      </button>
+
       <VillagerColumn villagers={villagers} />
       {selected !== undefined && <VillagerCard villager={selected} />}
       <BuildingCard />
       <BuildBar />
+      <Journal />
       <Welcome />
+      <ChapterTitle />
 
       <div className="hud-tools" role="status">
         <span className="hud-mode">{MODE_LABEL[mode]}</span>
@@ -117,7 +132,7 @@ export function Hud(): React.JSX.Element {
           {mode === 'plant' && ' · C растение'}
           {mode === 'dig' && ' · B кисть'}
           {mode === 'build' && ' · R повернуть'}
-          {' · Ctrl+Z отменить'}
+          {' · V смотреть · Ctrl+Z отменить'}
         </span>
       </div>
 

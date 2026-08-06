@@ -8,6 +8,7 @@ import {
 } from '@gavan/shared';
 import * as THREE from 'three';
 
+import { Ambient } from '../audio/ambient';
 import { CameraControls } from '../input/controls';
 import { Editing, REJECT_TEXT } from '../input/editing';
 import { Picker } from '../input/picking';
@@ -28,6 +29,7 @@ import { MesherPool } from './mesherPool';
 import { Plants } from './plants';
 import { VillagerRenderer } from './villagerRenderer';
 import { Terrain } from './terrain';
+import { WatchMode } from './watch';
 import { Water } from './water';
 
 /**
@@ -78,6 +80,18 @@ export async function createScene(
   const lighting = new Lighting(scene);
   const controls = new CameraControls(camera, canvas);
   const debug = new DebugOverlay(renderer);
+  const watch = new WatchMode();
+  const ambient = new Ambient();
+
+  // Звук включается по первому действию игрока: браузер не даст раньше, да и не надо —
+  // игра не должна начинаться с неожиданного шума.
+  const startAudio = (): void => {
+    ambient.start();
+    window.removeEventListener('pointerdown', startAudio);
+    window.removeEventListener('keydown', startAudio);
+  };
+  window.addEventListener('pointerdown', startAudio);
+  window.addEventListener('keydown', startAudio);
 
   scene.add(
     terrain.group,
@@ -123,6 +137,8 @@ export async function createScene(
 
   const onBuildingsChanged = (): void => {
     buildingRenderer.rebuild(world.state.buildings);
+    // Облёт идёт по тому, что игрок построил, — маршрут пересобирается вместе с островом.
+    watch.planRoute(world.state.buildings, WORLD_CENTER);
     publish();
   };
 
@@ -177,6 +193,8 @@ export async function createScene(
     stream.accept(message.villagers);
     useGameStore.getState().setVillagers(message.villagers);
     useGameStore.getState().setTick(message.tick);
+    useGameStore.getState().addJournal(message.journal ?? []);
+    if (message.chapter !== undefined) useGameStore.getState().showChapter(message.chapter.name);
 
     world.state.buildings = message.buildings;
     for (const [id, amount] of Object.entries(message.resources) as [ResourceId, number][]) {
@@ -191,6 +209,25 @@ export async function createScene(
 
     onBuildingsChanged();
   };
+
+  // Клавиша V — вход и выход. Выход по любой клавише: держать игрока в режиме нельзя.
+  const onWatchKey = (event: KeyboardEvent): void => {
+    const store = useGameStore.getState();
+
+    if (store.watching) {
+      event.preventDefault();
+      store.setWatching(false);
+      watch.reset();
+      return;
+    }
+
+    if (event.code !== 'KeyV' || event.ctrlKey || event.metaKey) return;
+    event.preventDefault();
+    watch.reset();
+    watch.planRoute(world.state.buildings, WORLD_CENTER);
+    store.setWatching(true);
+  };
+  window.addEventListener('keydown', onWatchKey);
 
   const link = new LiveLink(initial.id, {
     onMessage,
@@ -242,13 +279,22 @@ export async function createScene(
       hour = debug.hour;
     }
 
-    controls.update(delta);
-    editing.updateHighlight();
+    // Режим «Смотреть»: камера ведёт себя сама, интерфейс уходит целиком (§8 ТЗ).
+    const watching = useGameStore.getState().watching;
+    if (watching) {
+      watch.update(camera, controls.focus, delta);
+      highlight.hide();
+      ghost.hide();
+    } else {
+      controls.update(delta);
+      editing.updateHighlight();
+    }
 
     const alpha = stream.update(delta);
     villagerRenderer.update(stream.villagers, stream.previousVillagers, alpha, delta);
     const sky = lighting.update(hour, controls.focus);
     water.update(delta, sky);
+    ambient.update(hour, distanceToWater(controls.focus, island.shape));
 
     renderer.render(scene, camera);
     debug.update(delta);
@@ -258,6 +304,7 @@ export async function createScene(
 
   plants.rebuild(world.plants);
   buildingRenderer.rebuild(world.state.buildings);
+  watch.planRoute(world.state.buildings, WORLD_CENTER);
   publish();
   useGameStore.getState().setVillagers(initial.villagers);
   useGameStore.getState().setTick(initial.tick);
@@ -270,6 +317,10 @@ export async function createScene(
     dispose(): void {
       cancelAnimationFrame(frameId);
       observer.disconnect();
+      window.removeEventListener('keydown', onWatchKey);
+      window.removeEventListener('pointerdown', startAudio);
+      window.removeEventListener('keydown', startAudio);
+      ambient.dispose();
       useGameStore.getState().setSender(null);
       link.dispose();
       editing.dispose();
@@ -287,6 +338,14 @@ export async function createScene(
       renderer.dispose();
     },
   };
+}
+
+/** Сколько клеток от точки до воды. По этому числу микшируется шум прибоя. */
+function distanceToWater(point: THREE.Vector3, shape: { distToWater: Int16Array }): number {
+  const x = Math.round(point.x / VOXEL_SIZE);
+  const z = Math.round(point.z / VOXEL_SIZE);
+  if (x < 0 || x >= WORLD_X || z < 0 || z >= WORLD_Z) return 0;
+  return shape.distToWater[x + WORLD_X * z] ?? 0;
 }
 
 /** Центр мира в метрах — пригодится и камере, и облёту в режиме «Смотреть». */

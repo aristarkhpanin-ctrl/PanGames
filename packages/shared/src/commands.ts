@@ -64,7 +64,8 @@ export type RejectReason =
   | 'no_work_here'
   | 'crew_full'
   | 'no_beds'
-  | 'home_full';
+  | 'home_full'
+  | 'needs_firepit';
 
 export type ValidationResult = { ok: true } | { ok: false; reason: RejectReason };
 

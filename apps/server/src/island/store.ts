@@ -12,6 +12,7 @@ import {
   Material,
   SNAPSHOT_VERSION,
   type CatchUpEvent,
+  type Chapter,
   toSnapshot,
   toVillagerSnapshot,
   TICKS_PER_HOUR,
@@ -50,6 +51,12 @@ export interface LiveIsland {
   scenicSpots: Vec3[];
   villagers: Villager[];
   tick: number;
+  /** Какая сейчас глава (§7 ТЗ). Назад не откатывается. */
+  chapter: Chapter;
+  /** Сколько праздников уже было. Веха четвёртой главы. */
+  festivals: number;
+  /** До какого тика идёт праздник. Пусто — обычный день. */
+  festivalUntilTick?: number;
   /** Серверное время последнего расчёта. Только по нему считается догон (§9 ТЗ). */
   lastTickAt: Date;
   /** Есть ли несохранённые изменения. Запись идёт пачками, а не на каждый тик. */
@@ -83,6 +90,7 @@ export function hydrate(
   tick: number,
   people: Villager[],
   lastTickAt: Date = new Date(),
+  chapter: Chapter = 1,
 ): LiveIsland {
   const generated = generateIsland(seed);
 
@@ -104,6 +112,8 @@ export function hydrate(
     scenicSpots: findScenicSpots(grid),
     villagers: people,
     tick,
+    chapter,
+    festivals: 0,
     lastTickAt,
     dirty: false,
     pendingCatchUp: null,
@@ -139,6 +149,7 @@ export async function loadIsland(db: Database, id: string): Promise<LiveIsland |
     row.islands.tick,
     people.map((p) => p.data),
     row.islands.lastTickAt,
+    row.islands.chapter as Chapter,
   );
 }
 
@@ -156,7 +167,7 @@ export async function saveIsland(db: Database, live: LiveIsland): Promise<void> 
   await db.transaction(async (tx) => {
     await tx
       .update(islands)
-      .set({ tick: live.tick, lastTickAt: live.lastTickAt })
+      .set({ tick: live.tick, chapter: live.chapter, lastTickAt: live.lastTickAt })
       .where(eq(islands.id, live.id));
 
     await tx

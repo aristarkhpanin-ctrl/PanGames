@@ -8,6 +8,7 @@ import {
 import { buildingType, type BuildingType } from '../content/buildings';
 import { plantKind } from '../content/plants';
 import { canAfford, footprintOf, upgradeCost, type PlacedBuilding } from './economy';
+import { FESTIVAL_COST } from './festival';
 import { isOpaque, Material, SEA_LEVEL, WORLD_X, WORLD_Y, WORLD_Z, columnIndex } from '../voxels';
 import { isInside, surfaceHeight, type WorldReader, type WorldState } from './world';
 
@@ -97,8 +98,17 @@ export function validate(
       }
       return ACCEPTED;
     }
+    case 'host_festival': {
+      // Праздник — не покупка: он стоит еды и хорошего настроения, а не денег.
+      const ready = state.buildings.some(
+        (building) => building.typeId === 'firepit' && building.progress >= 1,
+      );
+      if (!ready) return reject('needs_firepit');
+      if (!canAfford(state.resources, FESTIVAL_COST)) return reject('cannot_afford');
+      return ACCEPTED;
+    }
     default:
-      // Остальные варианты появятся на M4 и M7. Форма контракта уже зафиксирована.
+      // `rename` появится вместе с интерфейсом переименования. Форма контракта уже есть.
       return reject('not_implemented');
   }
 }
@@ -283,6 +293,16 @@ function validatePlacement(
   // Перемещение уже оплачено при заказе, а новая постройка — нет.
   if (ignoreBuildingId === null && !canAfford(state.resources, type.cost)) {
     return reject('cannot_afford');
+  }
+
+  // Вдохновение — валюта уюта (§4 ТЗ). Едой и досками за него не платят и не будут:
+  // иначе оно превратится в обычный ресурс, который надо копить.
+  if (
+    (type.cost.inspiration ?? 0) > 0 &&
+    type.category !== 'culture' &&
+    type.category !== 'decor'
+  ) {
+    return reject('material_not_allowed');
   }
 
   return ACCEPTED;

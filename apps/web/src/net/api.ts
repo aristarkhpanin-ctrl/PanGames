@@ -96,6 +96,18 @@ export function sendCommands(
   });
 }
 
+export interface JournalEntry {
+  kind: string;
+  text: string;
+  actors: string[];
+  at: string;
+}
+
+export async function fetchJournal(id: string): Promise<JournalEntry[]> {
+  const response = await call<{ entries: JournalEntry[] }>(`/islands/${id}/journal`);
+  return response?.entries ?? [];
+}
+
 export function logout(): Promise<unknown> {
   return call('/auth/logout', { method: 'POST' });
 }

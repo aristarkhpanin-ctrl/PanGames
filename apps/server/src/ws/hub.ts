@@ -120,5 +120,7 @@ function tickMessage(broadcast: TickBroadcast): unknown {
     resources: broadcast.resources,
     storageCap: broadcast.storageCap,
     buildings: broadcast.buildings,
+    journal: broadcast.journal,
+    ...(broadcast.chapter === undefined ? {} : { chapter: broadcast.chapter }),
   };
 }

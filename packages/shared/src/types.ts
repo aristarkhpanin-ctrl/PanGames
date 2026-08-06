@@ -92,6 +92,8 @@ export interface Villager {
   homeId?: string;
   jobId?: string;
   favoriteSpot?: Vec3;
+  /** Тик, на котором житель появился на острове. Из него считается возраст (§5 ТЗ). */
+  arrivedAtTick?: number;
   state: AgentState;
   /** Где житель стоит прямо сейчас, в клетках мира. */
   position: Vec3;

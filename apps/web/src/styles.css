@@ -655,3 +655,134 @@ body {
   font-weight: 500;
   cursor: pointer;
 }
+
+/* Кнопка дневника. Ни счётчика непрочитанного, ни значка: читают, когда хочется. */
+.journal-button {
+  position: absolute;
+  top: calc(20px * var(--ui-scale));
+  right: calc(16px * var(--ui-scale));
+  padding: calc(6px * var(--ui-scale)) calc(14px * var(--ui-scale));
+  border: 0;
+  border-radius: 999px;
+  background: rgb(11 26 42 / 58%);
+  color: var(--sand);
+  font: inherit;
+  font-size: calc(13px * var(--ui-scale));
+  cursor: pointer;
+}
+
+/* Дневник острова (§8 ТЗ). Единственное место в игре, где живёт Caveat. */
+.journal {
+  position: absolute;
+  top: calc(58px * var(--ui-scale));
+  right: calc(16px * var(--ui-scale));
+  bottom: calc(90px * var(--ui-scale));
+  width: min(360px, calc(100vw - 32px));
+  padding: calc(16px * var(--ui-scale));
+  border-radius: 14px;
+  background: rgb(11 26 42 / 90%);
+  color: var(--sand);
+  overflow-y: auto;
+}
+
+.journal-head {
+  display: flex;
+  align-items: baseline;
+  gap: calc(10px * var(--ui-scale));
+  margin-bottom: calc(10px * var(--ui-scale));
+}
+
+.journal-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: calc(16px * var(--ui-scale));
+  font-weight: 500;
+}
+
+.journal-empty {
+  margin: 0;
+  font-size: calc(13px * var(--ui-scale));
+  line-height: calc(19px * var(--ui-scale));
+  opacity: 0.6;
+}
+
+.journal-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.journal-entry {
+  padding: calc(10px * var(--ui-scale)) 0;
+  border-top: 1px solid rgb(234 217 176 / 10%);
+}
+
+.journal-entry:first-child {
+  border-top: 0;
+}
+
+.journal-text {
+  margin: 0;
+  font-family: var(--font-journal);
+  font-size: calc(19px * var(--ui-scale));
+  line-height: calc(25px * var(--ui-scale));
+}
+
+.journal-actors {
+  display: flex;
+  gap: calc(8px * var(--ui-scale));
+  margin: calc(4px * var(--ui-scale)) 0 0;
+}
+
+.journal-actor {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--lamp);
+  font: inherit;
+  font-size: calc(12px * var(--ui-scale));
+  cursor: pointer;
+  opacity: 0.8;
+}
+
+/* Желание в карточке жителя: просьба, а не задание. */
+.card-wish {
+  margin: calc(10px * var(--ui-scale)) 0 0;
+  padding: calc(8px * var(--ui-scale)) calc(10px * var(--ui-scale));
+  border-radius: 8px;
+  background: rgb(242 193 78 / 10%);
+  font-size: calc(13px * var(--ui-scale));
+  line-height: calc(18px * var(--ui-scale));
+}
+
+/* Название главы: крупно, тихо и один раз (§7 ТЗ). */
+.chapter-title {
+  position: absolute;
+  top: 42%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: calc(44px * var(--ui-scale));
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  color: var(--sand);
+  text-shadow: 0 2px 24px rgb(9 30 42 / 70%);
+  pointer-events: none;
+  animation: chapter-fade 6s ease-in-out;
+}
+
+@keyframes chapter-fade {
+  0% {
+    opacity: 0;
+  }
+
+  15%,
+  75% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+  }
+}

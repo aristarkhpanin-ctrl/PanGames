@@ -5,6 +5,14 @@ import { createRng, deriveSeed, type Rng } from '../worldgen/rng';
 import { chooseAction, NEED_OF_ACTION, RESTORE_PER_TICK, type AgentContext } from './agents';
 import { comfortAt, COMFORT_FULL, homeOf, jobOf, type PlacedBuilding } from './economy';
 import { findPath, isWalkable, type NavGrid } from './navigation';
+import { chooseFavoriteSpot, growBonds } from './social';
+import {
+  activeWishes,
+  wishFor,
+  wishFulfilled,
+  WISHES_PER_ISLAND,
+  type WishContext,
+} from './wishes';
 import { decayNeeds, MOOD_FLOOR, smoothMood } from './needs';
 import { GAME_MINUTES_PER_TICK, hourOfTick } from './time';
 
@@ -21,12 +29,23 @@ export interface SimState {
   villagers: Villager[];
 }
 
-export type SimEventKind = 'arrived' | 'action_started' | 'path_failed';
+export type SimEventKind =
+  | 'arrived'
+  | 'action_started'
+  | 'path_failed'
+  | 'friendship'
+  | 'favorite_spot'
+  | 'wish'
+  | 'wish_done';
 
 export interface SimEvent {
   kind: SimEventKind;
   villagerId: string;
   state?: AgentState;
+  /** Второй участник: с кем подружились. */
+  withId?: string;
+  /** Где: любимое место. */
+  where?: Vec3;
 }
 
 export interface TickInput {
@@ -37,6 +56,8 @@ export interface TickInput {
   seed: number;
   /** Здания острова. Дом и работа хранятся в них, а не в жителе. */
   buildings?: readonly PlacedBuilding[];
+  /** Праздник: до какого тика все идут к общему огню (§7 ТЗ). */
+  festivalUntilTick?: number;
   /** Что растёт на острове: зелень поблизости прибавляет уюта. */
   plants?: readonly { x: number; z: number }[];
 }
@@ -71,6 +92,7 @@ export function simulateTick(
     buildings,
   };
 
+  const celebrating = (input.festivalUntilTick ?? 0) > tick;
   let pathsLeft = PATH_BUDGET_PER_TICK;
   const villagers = state.villagers.map((villager) => {
     const next = { ...villager, needs: decayNeeds(villager.needs, GAME_MINUTES_PER_TICK / 60) };
@@ -92,6 +114,20 @@ export function simulateTick(
     const busy = (next.busyUntilTick ?? 0) > tick;
     const walking = next.state === 'walk' && next.target !== undefined;
 
+    // Праздник сильнее любых нужд: сегодня никто не работает (§7 ТЗ).
+    if (celebrating && !walking) {
+      next.state = 'celebrate';
+      next.needs.social = clamp(next.needs.social + 14, 0, 100);
+      next.needs.beauty = clamp(next.needs.beauty + 8, 0, 100);
+      restoreFromComfort(next, buildings, plants);
+      next.mood = clamp(
+        smoothMood(next.mood, next.needs, GAME_MINUTES_PER_TICK / 60),
+        MOOD_FLOOR,
+        100,
+      );
+      return next;
+    }
+
     if (!busy && !walking) {
       const chosen = chooseAction(next, context, rng);
       applyChoice(next, chosen, tick, input.grid, rng, () => {
@@ -111,8 +147,48 @@ export function simulateTick(
     return next;
   });
 
+  // Отношения, любимые места и желания — то, ради чего игра открывается (§5, §7 ТЗ).
+  for (const risen of growBonds(villagers)) {
+    if (risen.level < 2) continue;
+    events.push({ kind: 'friendship', villagerId: risen.a.id, withId: risen.b.id });
+  }
+
+  for (const villager of villagers) {
+    const spot = chooseFavoriteSpot(villager, input.grid, input.scenicSpots, tick);
+    if (spot === null) continue;
+
+    villager.favoriteSpot = spot;
+    events.push({ kind: 'favorite_spot', villagerId: villager.id, where: spot });
+  }
+
+  const wishContext: WishContext = { villagers, buildings, plants: input.plants ?? [], tick };
+
+  for (const villager of villagers) {
+    if (villager.wish !== undefined) {
+      // Сбылось — тихая радость и запись в дневник. Не сбылось — не происходит ничего:
+      // ни напоминания, ни счётчика, ни значка (§7 ТЗ).
+      if (!wishFulfilled(villager, wishContext)) continue;
+      delete villager.wish;
+      events.push({ kind: 'wish_done', villagerId: villager.id });
+      continue;
+    }
+
+    // Желания появляются редко и по одному: очередь просьб — это уже список задач.
+    if (activeWishes(villagers) >= WISHES_PER_ISLAND) continue;
+    if (rng.range(0, 1) > WISH_CHANCE_PER_TICK) continue;
+
+    const wish = wishFor(villager, wishContext);
+    if (wish === null) continue;
+
+    villager.wish = wish;
+    events.push({ kind: 'wish', villagerId: villager.id });
+  }
+
   return { state: { tick, villagers }, events };
 }
+
+/** Насколько вероятно, что желание родится именно в этот тик. Редко — и в этом суть. */
+const WISH_CHANCE_PER_TICK = 0.01;
 
 /** Продвигает жителя по пути. Возвращает «arrived», если дошёл на этом тике. */
 function advance(villager: Villager, grid: NavGrid): 'moving' | 'arrived' | 'idle' {

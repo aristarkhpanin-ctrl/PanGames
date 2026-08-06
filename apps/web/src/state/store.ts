@@ -100,6 +100,21 @@ interface GameState {
   setCatchUp: (events: readonly CatchUpEvent[] | null) => void;
   dismissCatchUp: () => void;
 
+  /** Дневник острова — signature-элемент игры (§8 ТЗ). */
+  journalOpen: boolean;
+  toggleJournal: () => void;
+  /** Записи, приехавшие с тиками этой сессии. Ложатся поверх сохранённой ленты. */
+  journal: readonly { kind: string; text: string; actors: string[] }[];
+  addJournal: (entries: readonly { kind: string; text: string; actors: string[] }[]) => void;
+
+  /** Название новой главы. Показывается крупно, тихо и один раз (§7 ТЗ). */
+  chapterName: string | null;
+  showChapter: (name: string | null) => void;
+
+  /** Режим «Смотреть»: интерфейс исчезает целиком (§8 ТЗ). */
+  watching: boolean;
+  setWatching: (watching: boolean) => void;
+
   /** Зеркало жителей из воркера симуляции. React читает отсюда, сцена сюда пишет. */
   villagers: readonly Villager[];
   setVillagers: (villagers: readonly Villager[]) => void;
@@ -209,6 +224,27 @@ export const useGameStore = create<GameState>()((set) => ({
   },
   dismissCatchUp: () => {
     set({ catchUp: null });
+  },
+
+  journalOpen: false,
+  toggleJournal: () => {
+    set((state) => ({ journalOpen: !state.journalOpen }));
+  },
+  journal: [],
+  addJournal: (entries) => {
+    if (entries.length === 0) return;
+    // Новое сверху: лента читается от свежего к старому.
+    set((state) => ({ journal: [...entries, ...state.journal].slice(0, 200) }));
+  },
+
+  chapterName: null,
+  showChapter: (chapterName) => {
+    set({ chapterName });
+  },
+
+  watching: false,
+  setWatching: (watching) => {
+    set({ watching, journalOpen: false, selectedBuilding: null, selectedVillager: null });
   },
 
   villagers: [],

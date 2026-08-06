@@ -1,6 +1,15 @@
-import { moodWord, statusLine, trait, villagerLook, type Villager } from '@gavan/shared';
+import {
+  bondWord,
+  friendsOf,
+  moodWord,
+  statusLine,
+  trait,
+  villagerLook,
+  type Villager,
+} from '@gavan/shared';
 
 import { useGameStore } from '../state/store';
+import { WISH_WORDS } from './wishText';
 
 /**
  * Карточка жителя (§8 ТЗ): портрет, имя, чем занят, настроение словом, две черты.
@@ -10,7 +19,14 @@ import { useGameStore } from '../state/store';
  */
 export function VillagerCard({ villager }: { villager: Villager }): React.JSX.Element {
   const close = useGameStore((state) => state.selectVillager);
+  const everyone = useGameStore((state) => state.villagers);
   const look = villagerLook(villager.seed);
+
+  const friends = friendsOf(villager, everyone);
+  const closest = villager.bonds.reduce<{ level: 0 | 1 | 2 | 3; withId: string } | null>(
+    (best, bond) => (best === null || bond.level > best.level ? bond : best),
+    null,
+  );
 
   return (
     <aside className="card" role="dialog" aria-label={`Житель ${villager.name}`}>
@@ -53,7 +69,33 @@ export function VillagerCard({ villager }: { villager: Villager }): React.JSX.El
 
         <dt>Дом</dt>
         <dd>{villager.homeId === undefined ? 'ночует под открытым небом' : 'есть'}</dd>
+
+        {friends.length > 0 && (
+          <>
+            <dt>Друзья</dt>
+            <dd>
+              {friends.map((friend) => friend.name.split(' ')[0] ?? friend.name).join(', ')}
+              {closest !== null && closest.level === 3 ? ' — и совсем близкие' : ''}
+            </dd>
+          </>
+        )}
+
+        {friends.length === 0 && closest !== null && (
+          <>
+            <dt>Знакомства</dt>
+            <dd>пока {bondWord(closest.level)}</dd>
+          </>
+        )}
+
+        {villager.favoriteSpot !== undefined && (
+          <>
+            <dt>Любимое место</dt>
+            <dd>есть, у самой воды</dd>
+          </>
+        )}
       </dl>
+
+      {villager.wish !== undefined && <p className="card-wish">{WISH_WORDS[villager.wish.kind]}</p>}
 
       <p className="card-hint">
         {villager.homeId === undefined

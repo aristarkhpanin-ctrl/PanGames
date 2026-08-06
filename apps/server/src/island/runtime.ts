@@ -2,7 +2,13 @@ import {
   applyCommand,
   autoAssignments,
   catchUp,
+  chapterInfo,
   commitEffect,
+  createStartingVillagers,
+  comfortAt,
+  FESTIVAL_TICKS,
+  nextChapter,
+  totalBeds,
   economyTick,
   hourOfTick,
   rebuildNavArea,
@@ -11,12 +17,15 @@ import {
   WORLD_X,
   WORLD_Z,
   type CatchUpEvent,
+  type Chapter,
   type Command,
   type ValidationResult,
   type Villager,
 } from '@gavan/shared';
 
+import { journal } from '../db/schema';
 import type { Database } from '../db/client';
+import { Chronicle, type ChronicleEntry } from './chronicle';
 import { loadIsland, saveIsland, type LiveIsland } from './store';
 
 /**
@@ -43,6 +52,15 @@ const KEEP_ALIVE_MS = 60_000;
 /** Потолок команд в секунду на пользователя (§9 ТЗ). */
 export const COMMANDS_PER_SECOND = 30;
 
+/** Сколько жителей помещается на острове (§5 ТЗ). */
+const MAX_VILLAGERS = 60;
+
+/** Какой средний уют нужен, чтобы к вам захотелось приплыть. */
+const COMFORT_TO_ATTRACT = 6;
+
+/** Как часто вообще может кто-то приплыть. Раз в игровой день, не чаще. */
+const ARRIVAL_EVERY_TICKS = 144;
+
 export interface CommandOutcome {
   index: number;
   result: ValidationResult;
@@ -56,6 +74,24 @@ export interface TickBroadcast {
   resources: Record<string, number>;
   storageCap: number;
   buildings: LiveIsland['world']['buildings'];
+  /** Новые записи дневника за этот тик. Обычно пусто. */
+  journal: ChronicleEntry[];
+  /** Новая глава, если она наступила прямо сейчас. Показывается один раз (§7 ТЗ). */
+  chapter?: { number: Chapter; name: string };
+}
+
+/** Средний уют по жилью: от него зависят главы и приход новых жителей. */
+function averageComfort(island: LiveIsland): number {
+  const homes = island.world.buildings.filter(
+    (building) => building.progress >= 1 && building.residents.length > 0,
+  );
+  if (homes.length === 0) return 0;
+
+  let sum = 0;
+  for (const home of homes) {
+    sum += comfortAt(home, island.world.buildings, island.world.plants);
+  }
+  return sum / homes.length;
 }
 
 type TickListener = (broadcast: TickBroadcast) => void;
@@ -65,6 +101,7 @@ export class IslandRuntime {
   private readonly online = new Map<string, number>();
   private readonly idleSince = new Map<string, number>();
   private readonly listeners = new Set<TickListener>();
+  private readonly chronicle = new Chronicle();
   private readonly ticksSinceSave = new Map<string, number>();
   /**
    * Острова, которые прямо сейчас поднимаются. Без этого два одновременных запроса
@@ -212,6 +249,13 @@ export class IslandRuntime {
       commitEffect(island.world, effect);
       applied.push(effect);
 
+      // Праздник живёт в тике, а команда лишь назначает вечер (§7 ТЗ).
+      if (command.t === 'host_festival') {
+        island.festivalUntilTick = island.tick + FESTIVAL_TICKS;
+        island.festivals += 1;
+        void this.saveEntries(island.id, [this.chronicle.festivalEntry(island)]);
+      }
+
       for (const change of effect.voxels) island.generated.voxels[change.index] = change.material;
     }
 
@@ -244,6 +288,9 @@ export class IslandRuntime {
         seed: island.seed,
         buildings: island.world.buildings,
         plants: island.world.plants,
+        ...(island.festivalUntilTick === undefined
+          ? {}
+          : { festivalUntilTick: island.festivalUntilTick }),
       },
     );
 
@@ -251,12 +298,40 @@ export class IslandRuntime {
     island.tick = tick;
     island.dirty = true;
 
+    const entries = this.chronicle.fromTick(island, simulated.events);
+
+    // Достроенное здание — событие для дневника, а не строка в логе.
+    for (const change of economy.buildings) {
+      const before = change.before?.progress ?? 1;
+      const after = change.after?.progress ?? 0;
+      if (before < 1 && after >= 1 && change.after !== undefined) {
+        entries.push(this.chronicle.builtEntry(island, change.after.typeId));
+      }
+    }
+
     // Свободные дома и работы разбираются теми же командами, что и вручную.
     for (const command of autoAssignments(island.world, island.villagers)) {
       const verdict = validate(command, island.world, island.reader);
-      if (verdict.ok)
-        commitEffect(island.world, applyCommand(command, island.world, island.reader, tick));
+      if (!verdict.ok) continue;
+
+      commitEffect(island.world, applyCommand(command, island.world, island.reader, tick));
+
+      if (command.t !== 'assign_home' && command.t !== 'assign_job') continue;
+      const who = island.villagers.find((person) => person.id === command.villagerId);
+      if (who === undefined) continue;
+      if (command.t === 'assign_home') entries.push(this.chronicle.settledEntry(island, who));
+      if (command.t === 'assign_job' && command.buildingId !== null) {
+        entries.push(this.chronicle.hiredEntry(island, who));
+      }
     }
+
+    // Новые жители приплывают сами, когда есть где жить и вокруг хорошо (§5 ТЗ).
+    const newcomer = this.welcomeNewcomer(island);
+    if (newcomer !== null) entries.push(this.chronicle.arrivalEntry(island, newcomer));
+
+    const chapter = this.advanceChapter(island, entries);
+
+    if (entries.length > 0) void this.saveEntries(island.id, entries);
 
     return {
       islandId: island.id,
@@ -266,7 +341,73 @@ export class IslandRuntime {
       resources: island.world.resources,
       storageCap: island.world.storageCap,
       buildings: island.world.buildings,
+      journal: entries,
+      ...(chapter === null ? {} : { chapter }),
     };
+  }
+
+  /**
+   * Новый житель приплывает сам, когда есть свободное жильё и вокруг хорошо (§5 ТЗ).
+   *
+   * Не нанимается и не покупается: приходит, потому что тут хорошо. Появление всегда
+   * сопровождается записью — кто это и почему приплыл.
+   */
+  private welcomeNewcomer(island: LiveIsland): Villager | null {
+    if (island.villagers.length >= MAX_VILLAGERS) return null;
+    if (totalBeds(island.world.buildings) <= island.villagers.length) return null;
+    if (averageComfort(island) < COMFORT_TO_ATTRACT) return null;
+    if (island.tick % ARRIVAL_EVERY_TICKS !== 0) return null;
+
+    const spawn = island.scenicSpots[island.tick % Math.max(1, island.scenicSpots.length)];
+    if (spawn === undefined) return null;
+
+    // Житель делается тем же кодом, что и стартовые: имя, черты и внешность из сида.
+    const [newcomer] = createStartingVillagers(
+      island.seed + island.villagers.length * 7919,
+      island.id,
+      [spawn],
+    );
+    if (newcomer === undefined) return null;
+
+    const unique: Villager = {
+      ...newcomer,
+      id: `villager-${String(island.villagers.length + island.tick)}`,
+      arrivedAtTick: island.tick,
+    };
+
+    island.villagers = [...island.villagers, unique];
+    return unique;
+  }
+
+  /** Глава наступает по вехе и не откатывается назад (§7 ТЗ). */
+  private advanceChapter(
+    island: LiveIsland,
+    entries: ChronicleEntry[],
+  ): { number: Chapter; name: string } | null {
+    const earned = nextChapter(island.chapter, {
+      villagers: island.villagers,
+      buildings: island.world.buildings,
+      resources: island.world.resources,
+      festivals: island.festivals,
+      comfort: averageComfort(island),
+    });
+
+    if (earned === island.chapter) return null;
+
+    island.chapter = earned;
+    entries.push(this.chronicle.chapterEntry(island, earned));
+    return { number: earned, name: chapterInfo(earned).name };
+  }
+
+  private async saveEntries(islandId: string, entries: readonly ChronicleEntry[]): Promise<void> {
+    await this.db.insert(journal).values(
+      entries.map((entry) => ({
+        islandId,
+        kind: entry.kind,
+        text: entry.text,
+        actors: entry.actors,
+      })),
+    );
   }
 
   private async tickAll(): Promise<void> {

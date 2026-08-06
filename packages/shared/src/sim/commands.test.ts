@@ -282,16 +282,19 @@ describe('слой команд — нереализованное и разни
     const state = createWorldState(SEED);
     const world = createWorld();
 
-    // Праздники и переименование появятся на M7; здания уже работают и сюда не входят.
-    for (const command of [
-      { t: 'host_festival' },
-      { t: 'rename', scope: 'island', name: 'Тихая' },
-    ] satisfies Command[]) {
+    // Переименование появится вместе со своим интерфейсом; остальное уже работает.
+    for (const command of [{ t: 'rename', scope: 'island', name: 'Тихая' }] satisfies Command[]) {
       expect(validate(command, state, world.reader)).toEqual({
         ok: false,
         reason: 'not_implemented',
       });
     }
+
+    // Праздник отклоняется по делу, а не потому, что его не написали: нужен очаг.
+    expect(validate({ t: 'host_festival' }, state, world.reader)).toEqual({
+      ok: false,
+      reason: 'needs_firepit',
+    });
   });
 
   it('разница мира переживает запись и чтение', () => {
