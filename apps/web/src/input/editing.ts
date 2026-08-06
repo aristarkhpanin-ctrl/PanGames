@@ -6,6 +6,7 @@ import {
   footprintOf,
   isInsideWorld,
   missingResources,
+  SEA_LEVEL,
   surfaceHeight,
   WORLD_Y,
   type Command,
@@ -26,8 +27,20 @@ import type { Picker } from './picking';
  * Отказ показывается цветом рамки и тихой строкой, без модальных окон (§8, §9 ТЗ).
  */
 
-/** Чем насыпаем. Порядок задаёт перебор по клавише. */
-const FILL_MATERIALS = [Material.DIRT, Material.SAND, Material.STONE, Material.PATH] as const;
+/*
+ * Чем насыпаем. Порядок задаёт перебор по клавише.
+ *
+ * Мостки (M10) стоят последними и ведут себя иначе всех: они кладутся только на воду и только
+ * рядом с тем, по чему уже можно пройти. Отказ объясняется строкой, а не спрятанной кнопкой —
+ * попробовать положить настил посреди моря можно сколько угодно.
+ */
+export const FILL_MATERIALS = [
+  Material.DIRT,
+  Material.SAND,
+  Material.STONE,
+  Material.PATH,
+  Material.PLANK,
+] as const;
 
 /** Человеческие объяснения отказов. Каждое говорит, что делать дальше (§8 ТЗ). */
 export const REJECT_TEXT: Partial<Record<RejectReason, string>> = {
@@ -44,7 +57,8 @@ export const REJECT_TEXT: Partial<Record<RejectReason, string>> = {
   too_many_edits: 'Слишком большая правка за раз.',
   uneven_ground: 'Земля здесь слишком неровная. Подровняй площадку или поищи ровное место.',
   needs_land: 'Это место в воде. Дом ставят на сушу.',
-  needs_water: 'Пирс стоит над водой. Поставь его у берега.',
+  needs_water: 'Это место на суше. И пирс, и мостки кладут над водой.',
+  no_support: 'Мостки идут от берега или от соседней доски. Посреди моря им не на что опереться.',
   requires_missing: 'Сначала нужно построить то, из чего это получится.',
   no_such_building: 'Такого здания здесь уже нет.',
   still_building: 'Здание ещё строится. Оно скоро будет готово.',
@@ -313,9 +327,45 @@ export class Editing {
     if (hit === null) return null;
 
     const state = this.store;
+
+    /*
+     * Мостки целятся в поверхность воды, а не туда, куда упёрся луч.
+     *
+     * Луч сквозь воду проходит и утыкается в дно — без этой поправки настил пытались бы
+     * положить на глубине в несколько метров, и игра отвечала бы «это место на суше»
+     * на каждый щелчок по морю. Мостки лежат ровно на клетку выше уровня моря, всегда.
+     */
+    if (state.mode === 'fill' && this.fillMaterial === Material.PLANK) {
+      /*
+       * Целимся в соседний столбец по той грани, в которую попал луч. Кромку берега сверху
+       * не видно — её закрывает сам берег, — зато видно его боковую грань, и естественный
+       * жест «ткнуть в край пляжа со стороны воды» должен работать. Если сбоку воды нет,
+       * остаётся столбец под курсором: так кладут следующую доску, стоя на предыдущей.
+       */
+      const beside = { x: hit.x + hit.nx, z: hit.z + hit.nz };
+      const onWater = (x: number, z: number): boolean =>
+        this.world.material(x, SEA_LEVEL, z) === Material.WATER;
+
+      const base = onWater(beside.x, beside.z) ? beside : { x: hit.x, z: hit.z };
+      const radius = state.brush;
+      const cells: { x: number; y: number; z: number }[] = [];
+      for (let dz = -radius; dz <= radius; dz += 1) {
+        for (let dx = -radius; dx <= radius; dx += 1) {
+          cells.push({ x: base.x + dx, y: SEA_LEVEL + 1, z: base.z + dz });
+        }
+      }
+      return cells.filter((cell) => isInsideWorld(cell.x, cell.y, cell.z));
+    }
+
     const place = state.mode !== 'dig';
     const cells = this.highlight.hitCells(hit, state.brush, place);
     return cells.filter((cell) => isInsideWorld(cell.x, cell.y, cell.z));
+  }
+
+  /** Чем сейчас насыпают. */
+  private get fillMaterial(): number {
+    const state = this.store;
+    return FILL_MATERIALS[state.fillIndex % FILL_MATERIALS.length] ?? Material.DIRT;
   }
 
   private buildCommand(cells: readonly { x: number; y: number; z: number }[]): Command | null {
@@ -331,10 +381,7 @@ export class Editing {
       return { t: 'plant', pos: { x: cell.x, y: cell.y, z: cell.z }, kind: kind.id };
     }
 
-    const material =
-      state.mode === 'dig'
-        ? Material.AIR
-        : (FILL_MATERIALS[state.fillIndex % FILL_MATERIALS.length] ?? Material.DIRT);
+    const material = state.mode === 'dig' ? Material.AIR : this.fillMaterial;
 
     return {
       t: 'terraform',
@@ -529,5 +576,3 @@ export class Editing {
     this.detach.length = 0;
   }
 }
-
-export { FILL_MATERIALS };

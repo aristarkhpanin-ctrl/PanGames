@@ -163,15 +163,53 @@ function validateTerraform(
     if (!isInside(edit.pos)) return reject('outside_world');
     if (edit.pos.y < BEDROCK) return reject('bedrock');
     if (edit.pos.y >= WORLD_Y - 1) return reject('ceiling');
+
+    // Мостки — единственная доска, которую кладёт не здание, а рука игрока, и только
+    // над водой (M10). Всё остальное дерево по-прежнему принадлежит зданиям.
+    if (edit.mat === Material.PLANK) {
+      const refusal = bridgeCheck(edit.pos, world);
+      if (refusal !== null) return reject(refusal);
+      continue;
+    }
+
     if (!TERRAFORM_MATERIALS.includes(edit.mat)) return reject('material_not_allowed');
 
     const current = world.material(edit.pos.x, edit.pos.y, edit.pos.z);
     if (edit.mat === Material.AIR && !isOpaque(current)) return reject('nothing_to_dig');
   }
 
-  if (wouldSplitIsland(edits, world)) return reject('would_split_island');
+  if (wouldCutOffLand(edits, world)) return reject('would_split_island');
 
   return ACCEPTED;
+}
+
+/**
+ * Мостки (M10): доска над водой на высоте берега.
+ *
+ * Кладутся не куда угодно, а только рядом с тем, по чему уже можно пройти, — от берега
+ * или от предыдущей доски. Настил посреди моря был бы не мостом, а платформой, а её место
+ * в каталоге зданий (пирс), а не под лопатой.
+ */
+function bridgeCheck(
+  pos: { x: number; y: number; z: number },
+  world: WorldReader,
+): 'needs_water' | 'no_support' | null {
+  // Настил ложится ровно на одну клетку выше уровня моря — вровень с берегом.
+  if (pos.y !== SEA_LEVEL + 1) return 'needs_water';
+  // Под настилом должна быть вода: по суше и так ходят, стелить там нечего.
+  if (world.material(pos.x, SEA_LEVEL, pos.z) !== Material.WATER) return 'needs_water';
+  if (isOpaque(world.material(pos.x, pos.y, pos.z))) return 'needs_water';
+
+  const walkable = (x: number, z: number): boolean =>
+    isOpaque(world.material(x, pos.y, z)) || isOpaque(world.material(x, pos.y - 1, z));
+
+  const supported =
+    walkable(pos.x + 1, pos.z) ||
+    walkable(pos.x - 1, pos.z) ||
+    walkable(pos.x, pos.z + 1) ||
+    walkable(pos.x, pos.z - 1);
+
+  return supported ? null : 'no_support';
 }
 
 /**
@@ -181,7 +219,15 @@ function validateTerraform(
  * Полный обход запускается только тогда, когда правка действительно превращает сушу в воду —
  * копать вершину холма можно сколько угодно, и платить за это обходом не нужно.
  */
-function wouldSplitIsland(
+/**
+ * Не отрежет ли правка кусок суши от того, к чему он был подключён.
+ *
+ * Считается не связность целиком, а **число кусков**: с M10 у острова есть островки,
+ * и «вся суша — один кусок» перестало быть правдой по замыслу. Запрещено ровно то, ради чего
+ * правило и заводилось: превратить один кусок в два и отрезать жителей от их домов.
+ * Наоборот — соединить мостками два куска в один — разрешено и приветствуется.
+ */
+function wouldCutOffLand(
   edits: readonly { pos: { x: number; y: number; z: number }; mat: number }[],
   world: WorldReader,
 ): boolean {
@@ -204,6 +250,8 @@ function wouldSplitIsland(
     return false;
   };
 
+  // Полный пересчёт нужен, только если суша где-то ушла под воду. Насыпать можно всегда:
+  // добавленная земля кусков не разъединяет.
   let anyColumnDrowned = false;
   const touched = new Set<number>();
   for (const edit of edits) touched.add(columnIndex(edit.pos.x, edit.pos.z));
@@ -219,52 +267,11 @@ function wouldSplitIsland(
 
   if (!anyColumnDrowned) return false;
 
-  // Суша ушла под воду хотя бы в одной клетке — теперь проверяем связность целиком.
-  const land = new Uint8Array(WORLD_X * WORLD_Z);
-  let total = 0;
-  let start = -1;
-  for (let z = 0; z < WORLD_Z; z += 1) {
-    for (let x = 0; x < WORLD_X; x += 1) {
-      if (!isLand(x, z, materialAfter)) continue;
-      const index = columnIndex(x, z);
-      land[index] = 1;
-      total += 1;
-      if (start === -1) start = index;
-    }
-  }
+  const before = countLandmasses((x, z) => isLand(x, z, world.material.bind(world)));
+  const now = countLandmasses((x, z) => isLand(x, z, materialAfter));
 
-  if (total === 0) return true;
-
-  const visited = new Uint8Array(land.length);
-  const queue = new Int32Array(land.length);
-  let head = 0;
-  let tail = 0;
-  queue[tail] = start;
-  tail += 1;
-  visited[start] = 1;
-  let reached = 0;
-
-  while (head < tail) {
-    const current = queue[head] ?? 0;
-    head += 1;
-    reached += 1;
-    const x = current % WORLD_X;
-
-    const visit = (index: number): void => {
-      if (land[index] === 1 && visited[index] === 0) {
-        visited[index] = 1;
-        queue[tail] = index;
-        tail += 1;
-      }
-    };
-
-    if (x > 0) visit(current - 1);
-    if (x < WORLD_X - 1) visit(current + 1);
-    if (current >= WORLD_X) visit(current - WORLD_X);
-    if (current + WORLD_X < land.length) visit(current + WORLD_X);
-  }
-
-  return reached !== total;
+  // Утопить кусок целиком — тоже потеря: жители лишились бы места, куда ходили.
+  return now > before;
 }
 
 function validatePlant(
@@ -348,6 +355,53 @@ function validatePlacement(
 }
 
 /** Земля под участком: ровная суша, а для пирса и моста — мелководье. */
+
+/** Сколько отдельных кусков суши в мире. */
+function countLandmasses(isLand: (x: number, z: number) => boolean): number {
+  const land = new Uint8Array(WORLD_X * WORLD_Z);
+  for (let z = 0; z < WORLD_Z; z += 1) {
+    for (let x = 0; x < WORLD_X; x += 1) {
+      if (isLand(x, z)) land[columnIndex(x, z)] = 1;
+    }
+  }
+
+  const seen = new Uint8Array(land.length);
+  const queue = new Int32Array(land.length);
+  let masses = 0;
+
+  for (let start = 0; start < land.length; start += 1) {
+    if (land[start] !== 1 || seen[start] === 1) continue;
+
+    masses += 1;
+    let head = 0;
+    let tail = 0;
+    queue[tail] = start;
+    tail += 1;
+    seen[start] = 1;
+
+    while (head < tail) {
+      const current = queue[head] ?? 0;
+      head += 1;
+      const x = current % WORLD_X;
+
+      const visit = (index: number): void => {
+        if (land[index] === 1 && seen[index] === 0) {
+          seen[index] = 1;
+          queue[tail] = index;
+          tail += 1;
+        }
+      };
+
+      if (x > 0) visit(current - 1);
+      if (x < WORLD_X - 1) visit(current + 1);
+      if (current >= WORLD_X) visit(current - WORLD_X);
+      if (current + WORLD_X < land.length) visit(current + WORLD_X);
+    }
+  }
+
+  return masses;
+}
+
 function groundCheck(
   type: BuildingType,
   pos: { x: number; y: number; z: number },

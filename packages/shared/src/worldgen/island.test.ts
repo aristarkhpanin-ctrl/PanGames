@@ -97,55 +97,115 @@ describe('generateIsland — инварианты на 100 сидах', () => {
 });
 
 /** Суша — один кусок: до любого места можно дойти пешком, без мостов и лодок. */
+/**
+ * Суша: один большой остров плюс ровно столько островков, сколько заявлено в `shape.islets`.
+ *
+ * Островки — не «остров развалился», а замысел (M10). Поэтому проверяется не связность целиком,
+ * а то, что каждый кусок на своём месте: главный остров подавляюще больше остальных, островки
+ * не выродились в камень и не выросли во второй остров, и до каждого из них есть вода —
+ * иначе мостки были бы не нужны.
+ */
 function checkLandmass(island: GeneratedIsland, report: (message: string) => void): void {
-  const { land } = island.shape;
+  const { land, islets } = island.shape;
+  const parts = landComponents(land);
 
-  let start = -1;
   let total = 0;
-  for (let i = 0; i < WORLD_COLUMN_COUNT; i += 1) {
-    if (land[i] === 1) {
-      total += 1;
-      if (start === -1) start = i;
-    }
-  }
+  for (const part of parts) total += part.length;
 
   if (total < 7000 || total > 10_000) {
     report(`площадь суши ${String(total)} клеток вне разумных пределов`);
     return;
   }
 
-  const visited = new Uint8Array(WORLD_COLUMN_COUNT);
+  if (parts.length !== islets.length + 1) {
+    report(`кусков суши ${String(parts.length)}, а островков заявлено ${String(islets.length)}`);
+    return;
+  }
+
+  parts.sort((a, b) => b.length - a.length);
+  const main = parts[0] ?? [];
+  if (main.length < total * 0.93) {
+    report(`главный остров ${String(main.length)} из ${String(total)} — слишком мал`);
+  }
+
+  const onMain = new Uint8Array(WORLD_COLUMN_COUNT);
+  for (const index of main) onMain[index] = 1;
+
+  for (const part of parts.slice(1)) {
+    if (part.length < 20 || part.length > 220) {
+      report(`островок в ${String(part.length)} клеток: это уже не островок`);
+      continue;
+    }
+
+    // До островка должно быть плыть, а не шагать: иначе мостки не понадобились бы.
+    const gap = distanceToMain(part, onMain);
+    if (gap < 2) report(`островок прирос к берегу: до него ${String(gap)} клетки воды`);
+    if (gap > 16) report(`до островка ${String(gap)} клеток: мостки выйдут непомерными`);
+  }
+}
+
+/** Связные куски суши. Возвращает списки индексов столбцов. */
+function landComponents(land: Uint8Array): number[][] {
+  const seen = new Uint8Array(WORLD_COLUMN_COUNT);
+  const parts: number[][] = [];
   const queue = new Int32Array(WORLD_COLUMN_COUNT);
-  let head = 0;
-  let tail = 0;
-  queue[tail] = start;
-  tail += 1;
-  visited[start] = 1;
-  let reached = 0;
 
-  while (head < tail) {
-    const current = queue[head] ?? 0;
-    head += 1;
-    reached += 1;
-    const x = current % WORLD_X;
+  for (let start = 0; start < WORLD_COLUMN_COUNT; start += 1) {
+    if (land[start] !== 1 || seen[start] === 1) continue;
 
-    const visit = (index: number): void => {
-      if (land[index] === 1 && visited[index] === 0) {
-        visited[index] = 1;
-        queue[tail] = index;
-        tail += 1;
+    const part: number[] = [];
+    let head = 0;
+    let tail = 0;
+    queue[tail] = start;
+    tail += 1;
+    seen[start] = 1;
+
+    while (head < tail) {
+      const current = queue[head] ?? 0;
+      head += 1;
+      part.push(current);
+      const x = current % WORLD_X;
+
+      const visit = (index: number): void => {
+        if (land[index] === 1 && seen[index] === 0) {
+          seen[index] = 1;
+          queue[tail] = index;
+          tail += 1;
+        }
+      };
+
+      if (x > 0) visit(current - 1);
+      if (x < WORLD_X - 1) visit(current + 1);
+      if (current >= WORLD_X) visit(current - WORLD_X);
+      if (current + WORLD_X < WORLD_COLUMN_COUNT) visit(current + WORLD_X);
+    }
+
+    parts.push(part);
+  }
+
+  return parts;
+}
+
+/** Сколько клеток воды между куском суши и главным островом. */
+function distanceToMain(part: readonly number[], onMain: Uint8Array): number {
+  let best = Infinity;
+
+  for (const index of part) {
+    const x = index % WORLD_X;
+    const z = (index - x) / WORLD_X;
+
+    for (let dz = -18; dz <= 18; dz += 1) {
+      for (let dx = -18; dx <= 18; dx += 1) {
+        const nx = x + dx;
+        const nz = z + dz;
+        if (nx < 0 || nz < 0 || nx >= WORLD_X || nz >= WORLD_Z) continue;
+        if (onMain[columnIndex(nx, nz)] !== 1) continue;
+        best = Math.min(best, Math.hypot(dx, dz) - 1);
       }
-    };
-
-    if (x > 0) visit(current - 1);
-    if (x < WORLD_X - 1) visit(current + 1);
-    if (current >= WORLD_X) visit(current - WORLD_X);
-    if (current + WORLD_X < WORLD_COLUMN_COUNT) visit(current + WORLD_X);
+    }
   }
 
-  if (reached !== total) {
-    report(`суша распалась на куски: достижимо ${String(reached)} из ${String(total)}`);
-  }
+  return Math.round(best);
 }
 
 /** Все биомы на месте, и ни один не подмял остальные. */

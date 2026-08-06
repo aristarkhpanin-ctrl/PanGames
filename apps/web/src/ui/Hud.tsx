@@ -29,7 +29,7 @@ const MODE_LABEL: Record<EditMode, string> = {
   build: 'Строю',
 };
 
-const FILL_LABEL = ['землю', 'песок', 'камень', 'дорожку'];
+const FILL_LABEL = ['землю', 'песок', 'камень', 'дорожку', 'мостки'];
 
 /** Сколько тихая строка держится на экране. */
 const NOTICE_MS = 4000;
