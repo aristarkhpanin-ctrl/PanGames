@@ -47,6 +47,8 @@ export function Hud(): React.JSX.Element {
   const watching = useGameStore((state) => state.watching);
   const journalOpen = useGameStore((state) => state.journalOpen);
   const guest = useGameStore((state) => state.guest);
+  const arrival = useGameStore((state) => state.arrival);
+  const moored = useGameStore((state) => state.moored);
   const toggleJournal = useGameStore((state) => state.toggleJournal);
   const serverStatus = useGameStore((state) => state.serverStatus);
   const notice = useGameStore((state) => state.notice);
@@ -65,6 +67,7 @@ export function Hud(): React.JSX.Element {
     };
   }, [notice, noticeAt, setNotice]);
 
+  const opening = openingLine(worldReady, buildings.length, villagers, arrival);
   const selected = villagers.find((villager) => villager.id === selectedId);
   const plant = PLANTS[plantIndex % PLANTS.length];
   const fillName = FILL_LABEL[fillIndex % FILL_LABEL.length] ?? 'землю';
@@ -77,11 +80,17 @@ export function Hud(): React.JSX.Element {
   // Название главы остаётся: оно и есть то, ради чего смотрят.
   if (watching) return <ChapterTitle />;
 
+  // Прибытие (§11 ТЗ): на экране море, лодка и ровно одна строка. Ни панелей, ни кнопок,
+  // ни «пропустить» — пропускается любой клавишей и любым щелчком, и говорить об этом не надо.
+  if (arrival === 'playing') {
+    return moored ? <p className="arrival-line">Здесь будет хорошо</p> : <></>;
+  }
+
   return (
     <>
       <div className="hud-corner">
         <h1 className="hud-title">Гавань</h1>
-        <p className="hud-note">{openingLine(worldReady, buildings.length, villagers)}</p>
+        {opening !== '' && <p className="hud-note">{opening}</p>}
         {worldReady && !guest && <ResourceBar />}
         {worldReady && <VisitCode />}
       </div>
@@ -157,14 +166,20 @@ export function Hud(): React.JSX.Element {
 /**
  * Первая строка на экране. Пустое состояние не сообщает о пустоте, а подсказывает первый шаг
  * (§8 ТЗ): «Начни с шалаша — Мира ночует под открытым небом».
+ *
+ * Кто только что смотрел прибытие, этой подсказки не получает: в первой минуте должна быть
+ * ровно одна строка (§11 ТЗ), и она уже была. Что делать дальше, там говорит подсвеченное
+ * место на песке, а не текст.
  */
 function openingLine(
   worldReady: boolean,
   buildings: number,
   villagers: readonly Villager[],
+  arrival: 'none' | 'playing' | 'shown',
 ): string {
   if (!worldReady) return 'Остров поднимается из моря.';
   if (buildings > 0) return 'Здесь будет хорошо.';
+  if (arrival === 'shown') return '';
 
   const first = villagers[0];
   if (first === undefined) return 'Начни с шалаша — ночевать пока негде.';

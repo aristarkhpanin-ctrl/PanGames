@@ -5,6 +5,7 @@ import {
   buildNavGrid,
   createStartingVillagers,
   createWorldState,
+  findLandingSite,
   findScenicSpots,
   findSpawns,
   fromSnapshot,
@@ -124,7 +125,11 @@ export function hydrate(
 export function createIsland(id: string, seed: number): LiveIsland {
   const world = createWorldState(seed);
   const live = hydrate(id, seed, world, START_TICK, []);
-  live.villagers = createStartingVillagers(seed, id, findSpawns(live.grid));
+
+  // Четверо стоят там, где причалила лодка (§11 ТЗ). Место считает та же чистая функция,
+  // что и сцена прибытия у клиента, — иначе лодка пришла бы в одну бухту, а люди в другую.
+  const site = findLandingSite(live.grid, live.generated.shape);
+  live.villagers = createStartingVillagers(seed, id, findSpawns(live.grid, 4, site.shore));
   return live;
 }
 

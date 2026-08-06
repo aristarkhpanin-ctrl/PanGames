@@ -93,6 +93,9 @@ export class Editing {
       if (event.button !== 0 || event.altKey) return;
       if (this.spaceHeld) return;
 
+      // Во время прибытия щелчок только заканчивает сцену и ничего не копает.
+      if (this.store.arrival === 'playing') return;
+
       // В гостях можно только смотреть — и это проверяется здесь, а не спрятанной кнопкой.
       if (this.store.guest) {
         this.selectUnderCursor();
@@ -132,6 +135,9 @@ export class Editing {
 
     const onKey = (event: KeyboardEvent): void => {
       if (event.code === 'Space') this.spaceHeld = true;
+
+      // Пока идёт прибытие, клавиша значит одно: «хватит, дальше я сам».
+      if (this.store.arrival === 'playing') return;
 
       if (event.ctrlKey || event.metaKey) {
         if (event.code === 'KeyZ') {

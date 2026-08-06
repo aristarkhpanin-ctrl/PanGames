@@ -181,6 +181,32 @@ export class CameraControls {
     this.desiredYaw = Math.round(this.desiredYaw / SNAP) * SNAP;
   }
 
+  /**
+   * Ставит камеру на место без перелёта. Нужно ровно один раз — когда после прибытия
+   * управление отдаётся игроку: доехать туда плавно значило бы отнять у него ещё пару секунд.
+   *
+   * Направление тоже передаётся: если оставить своё, кадр сменился бы склейкой, и человек
+   * потерял бы из виду и берег, и людей, на которых только что смотрел.
+   */
+  moveTo(point: THREE.Vector3, distance = 34, yaw?: number): void {
+    this.desiredTarget.set(
+      THREE.MathUtils.clamp(point.x, -MARGIN, WORLD_WIDTH + MARGIN),
+      GROUND_Y,
+      THREE.MathUtils.clamp(point.z, -MARGIN, WORLD_DEPTH + MARGIN),
+    );
+    this.target.copy(this.desiredTarget);
+    this.desiredDistance = THREE.MathUtils.clamp(distance, MIN_DISTANCE, MAX_DISTANCE);
+    this.distance = this.desiredDistance;
+
+    if (yaw !== undefined) {
+      // К ближайшим 45°: остров и после сцены стоит ровно, как везде в игре.
+      this.desiredYaw = Math.round(yaw / SNAP) * SNAP;
+      this.yaw = this.desiredYaw;
+    }
+
+    this.apply();
+  }
+
   update(deltaSeconds: number): void {
     // Сглаживание, не зависящее от частоты кадров: на 30 и на 144 fps ощущается одинаково.
     const ease = 1 - Math.exp(-12 * deltaSeconds);

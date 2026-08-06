@@ -1,4 +1,6 @@
 import {
+  buildNavGrid,
+  findLandingSite,
   fromSnapshot,
   generateIsland,
   VOXEL_SIZE,
@@ -19,6 +21,7 @@ import { LiveLink, type LiveMessage } from '../net/live';
 import { LiveWorld, type WorldUpdate } from '../state/liveWorld';
 import { useGameStore } from '../state/store';
 import { VillagerStream } from '../sim/villagerStream';
+import { Arrival, FirstSpot } from './arrival';
 import { BuildingRenderer } from './buildingRenderer';
 import { DebugOverlay } from './debugOverlay';
 import { Decor } from './decor';
@@ -104,6 +107,27 @@ export async function createScene(
     ghost.group,
   );
 
+  /**
+   * Прибытие (§11 ТЗ) — только на пустом острове и только один раз.
+   *
+   * Признак «пустой» берётся из мира, а не из флага: остров, на котором уже что-то стоит,
+   * человек точно видел. Отметка о просмотре живёт рядом с браузером — переигрывать
+   * первую минуту тому, кто её уже прошёл, было бы неуважением к его времени.
+   */
+  const firstTime = !useGameStore.getState().guest && world.state.buildings.length === 0;
+  const site = firstTime ? findLandingSite(buildNavGrid(world), island.shape) : null;
+  const arrival = site !== null && !alreadyArrived(initial.id) ? new Arrival(site) : null;
+  const firstSpot = site !== null ? new FirstSpot(site.hut) : null;
+
+  if (firstSpot !== null) scene.add(firstSpot.group);
+  if (arrival !== null) {
+    scene.add(arrival.group);
+    rememberArrival(initial.id);
+    useGameStore.getState().setArrival('playing');
+    // Метка ждёт, пока лодка причалит: подсказка до прибытия — это подсказка в пустоту.
+    if (firstSpot !== null) firstSpot.visible = false;
+  }
+
   const stream = new VillagerStream();
   stream.accept(initial.villagers);
 
@@ -139,6 +163,8 @@ export async function createScene(
     buildingRenderer.rebuild(world.state.buildings);
     // Облёт идёт по тому, что игрок построил, — маршрут пересобирается вместе с островом.
     watch.planRoute(world.state.buildings, WORLD_CENTER);
+    // Первая постройка гасит метку. Дальше объясняют желания жителей, а не интерфейс.
+    if (firstSpot !== null && world.state.buildings.length > 0) firstSpot.visible = false;
     publish();
   };
 
@@ -210,9 +236,33 @@ export async function createScene(
     onBuildingsChanged();
   };
 
+  /** Конец прибытия: камера отдаётся игроку и встаёт там, где он её оставил бы сам. */
+  const endArrival = (): void => {
+    if (arrival === null) return;
+    arrival.skip();
+    scene.remove(arrival.group);
+    controls.moveTo(arrival.restingTarget(), 26, arrival.restingYaw());
+    if (firstSpot !== null && world.state.buildings.length === 0) firstSpot.visible = true;
+    useGameStore.getState().setArrival('shown');
+  };
+
+  // Пропуск — любой клавишей и любым щелчком (§11 ТЗ). Кнопки «пропустить» нет: она сама
+  // по себе сообщала бы, что дальше будет что-то, что хочется пропустить.
+  const onSkip = (): void => {
+    if (useGameStore.getState().arrival !== 'playing') return;
+    endArrival();
+  };
+
+  if (arrival !== null) {
+    window.addEventListener('keydown', onSkip);
+    window.addEventListener('pointerdown', onSkip);
+  }
+
   // Клавиша V — вход и выход. Выход по любой клавише: держать игрока в режиме нельзя.
   const onWatchKey = (event: KeyboardEvent): void => {
     const store = useGameStore.getState();
+
+    if (store.arrival === 'playing') return;
 
     if (store.watching) {
       event.preventDefault();
@@ -262,6 +312,8 @@ export async function createScene(
   // THREE.Clock объявлен устаревшим; своё время надёжнее и не тянет лишний класс.
   let previous = performance.now();
   let frameId = 0;
+  /** Строка «Здесь будет хорошо» ставится один раз, а не каждый кадр. */
+  let moored = false;
 
   const loop = (): void => {
     frameId = requestAnimationFrame(loop);
@@ -279,9 +331,18 @@ export async function createScene(
       hour = debug.hour;
     }
 
-    // Режим «Смотреть»: камера ведёт себя сама, интерфейс уходит целиком (§8 ТЗ).
-    const watching = useGameStore.getState().watching;
-    if (watching) {
+    // Прибытие идёт первым: пока лодка не причалила, ни камера, ни правки игроку не отданы.
+    if (arrival !== null && useGameStore.getState().arrival === 'playing') {
+      const sailing = arrival.update(camera, delta);
+      if (arrival.moored && !moored) {
+        moored = true;
+        useGameStore.getState().setMoored(true);
+      }
+      highlight.hide();
+      ghost.hide();
+      if (!sailing) endArrival();
+    } else if (useGameStore.getState().watching) {
+      // Режим «Смотреть»: камера ведёт себя сама, интерфейс уходит целиком (§8 ТЗ).
       watch.update(camera, controls.focus, delta);
       highlight.hide();
       ghost.hide();
@@ -318,6 +379,10 @@ export async function createScene(
       cancelAnimationFrame(frameId);
       observer.disconnect();
       window.removeEventListener('keydown', onWatchKey);
+      window.removeEventListener('keydown', onSkip);
+      window.removeEventListener('pointerdown', onSkip);
+      arrival?.dispose();
+      firstSpot?.dispose();
       window.removeEventListener('pointerdown', startAudio);
       window.removeEventListener('keydown', startAudio);
       ambient.dispose();
@@ -338,6 +403,29 @@ export async function createScene(
       renderer.dispose();
     },
   };
+}
+
+/**
+ * Отметка о том, что прибытие уже показывали. Живёт в браузере, а не на сервере: это факт
+ * про человека за экраном, а не про остров, и хранить его вместе с игровым состоянием незачем.
+ */
+const ARRIVAL_KEY = 'gavan.arrival';
+
+function alreadyArrived(islandId: string): boolean {
+  try {
+    return window.localStorage.getItem(`${ARRIVAL_KEY}.${islandId}`) !== null;
+  } catch {
+    // Приватный режим запрещает хранилище. Прибытие покажется ещё раз — это не поломка.
+    return false;
+  }
+}
+
+function rememberArrival(islandId: string): void {
+  try {
+    window.localStorage.setItem(`${ARRIVAL_KEY}.${islandId}`, '1');
+  } catch {
+    // См. выше: без хранилища игра работает, просто первая минута может повториться.
+  }
 }
 
 /** Сколько клеток от точки до воды. По этому числу микшируется шум прибоя. */

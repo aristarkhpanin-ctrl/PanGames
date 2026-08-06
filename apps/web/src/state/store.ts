@@ -126,6 +126,17 @@ interface GameState {
   watching: boolean;
   setWatching: (watching: boolean) => void;
 
+  /**
+   * Прибытие (§11 ТЗ). `none` — не показывали, `playing` — идёт прямо сейчас,
+   * `shown` — показали в этой сессии. Пока идёт, на экране нет ничего, кроме одной строки.
+   */
+  arrival: 'none' | 'playing' | 'shown';
+  setArrival: (arrival: 'none' | 'playing' | 'shown') => void;
+
+  /** Лодка причалила: только с этого момента появляется та самая единственная строка. */
+  moored: boolean;
+  setMoored: (moored: boolean) => void;
+
   /** Зеркало жителей из воркера симуляции. React читает отсюда, сцена сюда пишет. */
   villagers: readonly Villager[];
   setVillagers: (villagers: readonly Villager[]) => void;
@@ -266,6 +277,16 @@ export const useGameStore = create<GameState>()((set) => ({
   watching: false,
   setWatching: (watching) => {
     set({ watching, journalOpen: false, selectedBuilding: null, selectedVillager: null });
+  },
+
+  arrival: 'none',
+  setArrival: (arrival) => {
+    set({ arrival });
+  },
+
+  moored: false,
+  setMoored: (moored) => {
+    set({ moored });
   },
 
   villagers: [],
