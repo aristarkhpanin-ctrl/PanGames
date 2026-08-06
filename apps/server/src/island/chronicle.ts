@@ -118,6 +118,11 @@ export class Chronicle {
     ]);
   }
 
+  /** Запись о госте, который оставил подарок. Ни счётчика, ни оценки — просто событие. */
+  giftEntry(island: LiveIsland, guest: string): ChronicleEntry {
+    return this.write(island, 'gift', hourOfTick(island.tick), { name: guest }, []);
+  }
+
   /** Запись о новой работе. */
   hiredEntry(island: LiveIsland, villager: Villager): ChronicleEntry {
     return this.write(island, 'hired', hourOfTick(island.tick), { name: first(villager.name) }, [

@@ -3,7 +3,7 @@ import './styles.css';
 
 import { worthShowing } from '@gavan/shared';
 
-import { createIsland, fetchIsland, fetchIslands, fetchMe } from './net/api';
+import { createIsland, fetchIsland, fetchIslandByCode, fetchIslands, fetchMe } from './net/api';
 import { createScene } from './render/scene';
 import { useGameStore } from './state/store';
 import { mountHud } from './ui/mount';
@@ -25,6 +25,23 @@ mountHud(hud);
  */
 async function boot(canvasElement: HTMLCanvasElement): Promise<void> {
   const store = useGameStore.getState();
+
+  // Гость приходит по коду: `?code=ABCDEF`. Смотреть можно и не входя (§9 ТЗ).
+  const code = new URLSearchParams(window.location.search).get('code');
+  if (code !== null) {
+    const visited = await fetchIslandByCode(code);
+    if (visited === null) {
+      store.setSession(null);
+      store.setNotice('Остров по этому коду не нашёлся. Проверь буквы');
+      return;
+    }
+
+    store.setSession((await fetchMe()) ?? { id: 'guest', email: '' });
+    store.setGuest(true);
+    store.setIsland({ id: visited.id, name: visited.name ?? 'Остров' });
+    await createScene(canvasElement, visited);
+    return;
+  }
 
   const me = await fetchMe();
   if (me === null) {
@@ -50,6 +67,7 @@ async function boot(canvasElement: HTMLCanvasElement): Promise<void> {
   }
 
   store.setIsland({ id: chosen.id, name: chosen.name });
+  store.setVisitCode(state.visitCode ?? null);
 
   // Экран возвращения показывается только если есть о чём рассказать (§3 ТЗ):
   // пустой отчёт хуже отсутствия отчёта.

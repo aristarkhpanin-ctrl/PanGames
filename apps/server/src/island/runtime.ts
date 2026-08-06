@@ -8,6 +8,7 @@ import {
   comfortAt,
   FESTIVAL_TICKS,
   nextChapter,
+  SHELLS_PER_COMFORT_TICK,
   totalBeds,
   economyTick,
   hourOfTick,
@@ -185,6 +186,33 @@ export class IslandRuntime {
     return loaded;
   }
 
+  /**
+   * Гость оставил подарок: остров узнаёт об этом записью в дневнике и цветком на берегу
+   * (§9 ТЗ). Уведомление владельцу — доброе и редкое, без «вернись скорее» (устав, п. 9).
+   */
+  noteGift(islandId: string, guest: string): void {
+    const island = this.live.get(islandId);
+    if (island === undefined) return;
+
+    const name = guest.split('@')[0] ?? 'кто-то';
+    void this.saveEntries(islandId, [this.chronicle.giftEntry(island, name)]);
+
+    // След визита: цветок на берегу. Владелец может пересадить его, но не потерять.
+    const spot = island.scenicSpots[island.tick % Math.max(1, island.scenicSpots.length)];
+    if (spot === undefined) return;
+
+    island.world.plants.push({
+      id: `plant-${String(island.world.nextPlantId)}`,
+      kind: 'flower_pink',
+      x: spot.x,
+      y: spot.y - 1,
+      z: spot.z,
+      seed: island.seed + island.tick,
+    });
+    island.world.nextPlantId += 1;
+    island.dirty = true;
+  }
+
   /** Отдаёт результат догона один раз: экран «Пока тебя не было» показывается однажды. */
   takeCatchUp(island: LiveIsland): CatchUpEvent[] | null {
     const events = island.pendingCatchUp;
@@ -299,6 +327,16 @@ export class IslandRuntime {
     island.dirty = true;
 
     const entries = this.chronicle.fromTick(island, simulated.events);
+
+    // Ракушки жители дают «за просто хорошую жизнь» (§4 ТЗ) — и это заодно страховка
+    // от тупика: даже остров, у которого кончилось всё, копит на первую покупку у лодки.
+    const comfort = averageComfort(island);
+    if (comfort > 0) {
+      island.world.resources.shell = Math.min(
+        island.world.storageCap,
+        island.world.resources.shell + comfort * SHELLS_PER_COMFORT_TICK,
+      );
+    }
 
     // Достроенное здание — событие для дневника, а не строка в логе.
     for (const change of economy.buildings) {

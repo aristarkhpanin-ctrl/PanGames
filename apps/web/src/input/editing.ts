@@ -93,6 +93,12 @@ export class Editing {
       if (event.button !== 0 || event.altKey) return;
       if (this.spaceHeld) return;
 
+      // В гостях можно только смотреть — и это проверяется здесь, а не спрятанной кнопкой.
+      if (this.store.guest) {
+        this.selectUnderCursor();
+        return;
+      }
+
       if (this.store.mode === 'look') {
         this.selectUnderCursor();
         return;
@@ -136,6 +142,8 @@ export class Editing {
         }
         return;
       }
+
+      if (this.store.guest) return;
 
       const modes: Partial<Record<string, EditMode>> = {
         Digit1: 'look',

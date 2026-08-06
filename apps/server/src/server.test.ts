@@ -561,3 +561,208 @@ describe.skipIf(!available)('догон', () => {
     expect(greedy).toBeGreaterThan(0);
   });
 });
+
+describe.skipIf(!available)('гости', () => {
+  /** Возвращает код острова: владелец видит его в порту. */
+  async function visitCode(id: string, cookie: string): Promise<string> {
+    const island = await app.inject({ method: 'GET', url: `/islands/${id}`, headers: { cookie } });
+    return island.json<{ visitCode: string }>().visitCode;
+  }
+
+  it('заходят по коду и видят остров, не входя в игру', async () => {
+    const owner = await signIn('host@example.com');
+    const id = await makeIsland(owner);
+    const code = await visitCode(id, owner);
+
+    // Анонимный просмотр разрешён: код — это приглашение, а не пропуск.
+    const guest = await app.inject({ method: 'GET', url: `/islands/by-code/${code}` });
+    expect(guest.statusCode).toBe(200);
+
+    const body = guest.json<{ guest: boolean; villagers: unknown[] }>();
+    expect(body.guest).toBe(true);
+    expect(body.villagers).toHaveLength(4);
+  });
+
+  it('по выдуманному коду ничего не открывается', async () => {
+    const response = await app.inject({ method: 'GET', url: '/islands/by-code/ZZZZZZ' });
+    expect(response.statusCode).toBe(404);
+  });
+
+  it('не могут изменить чужой остров ни одной командой', async () => {
+    const owner = await signIn('owner2@example.com');
+    const id = await makeIsland(owner);
+    const spot = await flatSpot(id);
+    const guest = await signIn('guest2@example.com');
+
+    // Read-only выражен правами на сервере, а не спрятанными кнопками на клиенте.
+    for (const command of [
+      { t: 'place_building', typeId: 'hut', pos: spot, rot: 0 },
+      { t: 'terraform', edits: [{ pos: spot, mat: 0 }] },
+      { t: 'plant', pos: spot, kind: 'flower' },
+      { t: 'remove_building', id: 'building-1' },
+      { t: 'host_festival' },
+    ]) {
+      const response = await app.inject({
+        method: 'POST',
+        url: `/islands/${id}/commands`,
+        headers: { cookie: guest },
+        payload: { commands: [command] },
+      });
+      expect(response.statusCode, JSON.stringify(command)).toBe(403);
+    }
+  });
+});
+
+describe.skipIf(!available)('подарки', () => {
+  async function islandWithHarborResources(cookie: string): Promise<string> {
+    const id = await makeIsland(cookie);
+    const island = await app.runtime.open(id);
+    if (island === null) throw new Error('остров не поднялся');
+
+    island.world.resources.plank = 100;
+    island.world.resources.stone = 100;
+    return id;
+  }
+
+  it('уходят у одного и приходят другому', async () => {
+    const owner = await signIn('gets@example.com');
+    const ownerIsland = await makeIsland(owner);
+
+    const guest = await signIn('gives@example.com');
+    const guestIsland = await islandWithHarborResources(guest);
+
+    const before = (await app.runtime.open(guestIsland))?.world.resources.fruit ?? 0;
+
+    const sent = await app.inject({
+      method: 'POST',
+      url: `/islands/${ownerIsland}/gifts`,
+      headers: { cookie: guest },
+      payload: { kind: 'fruit', messageId: 'was_here' },
+    });
+    expect(sent.statusCode).toBe(201);
+
+    // Отдающий действительно отдаёт: подарок берётся со склада гостя, а не из воздуха.
+    expect((await app.runtime.open(guestIsland))?.world.resources.fruit).toBe(before - 4);
+
+    const waiting = await app.inject({
+      method: 'GET',
+      url: `/islands/${ownerIsland}/gifts`,
+      headers: { cookie: owner },
+    });
+    const list = waiting.json<{ gifts: { id: string }[] }>().gifts;
+    expect(list).toHaveLength(1);
+
+    const giftId = list[0]?.id ?? '';
+    const claimed = await app.inject({
+      method: 'POST',
+      url: `/islands/${ownerIsland}/gifts/${giftId}/claim`,
+      headers: { cookie: owner },
+    });
+    expect(claimed.statusCode).toBe(200);
+    expect((await app.runtime.open(ownerIsland))?.world.resources.fruit).toBe(12);
+  });
+
+  it('свободный текст передать нельзя ни через одно поле', async () => {
+    const owner = await signIn('quiet2@example.com');
+    const ownerIsland = await makeIsland(owner);
+    const guest = await signIn('talker@example.com');
+    await islandWithHarborResources(guest);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/islands/${ownerIsland}/gifts`,
+      headers: { cookie: guest },
+      payload: { kind: 'fruit', messageId: 'что я думаю о твоём острове' },
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('не дают дарить без входа и слишком часто', async () => {
+    const owner = await signIn('receiver@example.com');
+    const ownerIsland = await makeIsland(owner);
+
+    const anonymous = await app.inject({
+      method: 'POST',
+      url: `/islands/${ownerIsland}/gifts`,
+      payload: { kind: 'fruit', messageId: 'was_here' },
+    });
+    expect(anonymous.statusCode).toBe(401);
+
+    const guest = await signIn('generous@example.com');
+    await islandWithHarborResources(guest);
+
+    const first = await app.inject({
+      method: 'POST',
+      url: `/islands/${ownerIsland}/gifts`,
+      headers: { cookie: guest },
+      payload: { kind: 'fruit', messageId: 'was_here' },
+    });
+    expect(first.statusCode).toBe(201);
+
+    const again = await app.inject({
+      method: 'POST',
+      url: `/islands/${ownerIsland}/gifts`,
+      headers: { cookie: guest },
+      payload: { kind: 'stones', messageId: 'quiet' },
+    });
+    expect(again.statusCode).toBe(429);
+  });
+
+  it('оставляют след на берегу и запись в дневнике', async () => {
+    const owner = await signIn('trace@example.com');
+    const ownerIsland = await makeIsland(owner);
+    const before = (await app.runtime.open(ownerIsland))?.world.plants.length ?? 0;
+
+    const guest = await signIn('visitor@example.com');
+    await islandWithHarborResources(guest);
+
+    await app.inject({
+      method: 'POST',
+      url: `/islands/${ownerIsland}/gifts`,
+      headers: { cookie: guest },
+      payload: { kind: 'fruit', messageId: 'was_here' },
+    });
+
+    // Цветок на берегу — след визита, а не счётчик посещений.
+    expect((await app.runtime.open(ownerIsland))?.world.plants.length).toBe(before + 1);
+
+    const entries = await app.inject({
+      method: 'GET',
+      url: `/islands/${ownerIsland}/journal`,
+      headers: { cookie: owner },
+    });
+    const texts = entries.json<{ entries: { text: string }[] }>().entries.map((e) => e.text);
+    expect(texts.some((text) => text.includes('visitor'))).toBe(true);
+  });
+});
+
+describe.skipIf(!available)('друзья', () => {
+  it('добавляются по коду и не сравниваются ни с кем', async () => {
+    const owner = await signIn('friendly@example.com');
+    const id = await makeIsland(owner);
+    const island = await app.inject({
+      method: 'GET',
+      url: `/islands/${id}`,
+      headers: { cookie: owner },
+    });
+    const code = island.json<{ visitCode: string }>().visitCode;
+
+    const other = await signIn('newfriend@example.com');
+    await makeIsland(other);
+
+    const added = await app.inject({
+      method: 'POST',
+      url: `/friends/${code}`,
+      headers: { cookie: other },
+    });
+    expect(added.statusCode).toBe(200);
+
+    const list = await app.inject({ method: 'GET', url: '/friends', headers: { cookie: other } });
+    const friends = list.json<{ friends: { code: string; name: string }[] }>().friends;
+
+    expect(friends).toHaveLength(1);
+    // В списке только имя и код: ни оценок, ни «побывало гостей», ни рейтинга.
+    expect(Object.keys(friends[0] ?? {})).toEqual(['code', 'name']);
+  });
+});

@@ -42,10 +42,12 @@ export function BuildBar(): React.JSX.Element | null {
   const resources = useGameStore((state) => state.resources);
   const buildings = useGameStore((state) => state.buildings);
   const rotation = useGameStore((state) => state.buildRotation);
+  const guest = useGameStore((state) => state.guest);
 
   const [category, setCategory] = useState<BuildingCategory>('home');
 
-  if (mode !== 'build') return null;
+  // В гостях панели нет вовсе: read-only означает read-only (§9 ТЗ).
+  if (guest || mode !== 'build') return null;
 
   const available = BUILDINGS.filter((type) => type.category === category);
   const built = new Set(buildings.filter((b) => b.progress >= 1).map((b) => b.typeId));

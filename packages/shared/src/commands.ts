@@ -1,4 +1,4 @@
-import type { BuildingTypeId, PlantId, Vec3 } from './types';
+import type { BuildingTypeId, PlantId, ResourceId, Vec3 } from './types';
 
 /**
  * Единственный способ изменить мир (§9 ТЗ).
@@ -20,7 +20,16 @@ export type Command =
   | { t: 'terraform'; edits: VoxelPlacement[] }
   | { t: 'plant'; pos: Vec3; kind: PlantId }
   | { t: 'rename'; scope: 'island' | 'villager'; id?: string; name: string }
-  | { t: 'host_festival' };
+  | { t: 'host_festival' }
+  /**
+   * Обмен у торговой лодки (§4 ТЗ). `give` — что сдаём за ракушки, `take` — что берём за них.
+   * Существует ради того, чтобы тупик по ресурсам был невозможен, а не ради экономики.
+   */
+  | {
+      t: 'trade';
+      give?: { id: ResourceId; amount: number };
+      take?: { id: ResourceId; amount: number };
+    };
 
 export interface VoxelPlacement {
   pos: Vec3;
@@ -65,7 +74,11 @@ export type RejectReason =
   | 'crew_full'
   | 'no_beds'
   | 'home_full'
-  | 'needs_firepit';
+  | 'needs_firepit'
+  | 'needs_harbor'
+  | 'no_boat'
+  | 'not_tradable'
+  | 'too_much';
 
 export type ValidationResult = { ok: true } | { ok: false; reason: RejectReason };
 

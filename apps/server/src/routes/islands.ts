@@ -161,9 +161,14 @@ export function registerIslandRoutes(
     if ('error' in found) return reply.code(found.error).send({ error: explain(found.error) });
 
     const { island } = found;
+    const row = (await db.select().from(islands).where(eq(islands.id, island.id)).limit(1))[0];
+
     return reply.send({
       id: island.id,
       seed: island.seed,
+      /** Код для гостей. Показывается владельцу в порту и копируется одной кнопкой. */
+      visitCode: row?.visitCode ?? '',
+      chapter: island.chapter,
       tick: island.tick,
       hour: hourOfTick(island.tick),
       world: toSnapshot(island.world),

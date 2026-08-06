@@ -36,6 +36,17 @@ interface GameState {
   island: IslandInfo | null;
   setIsland: (island: IslandInfo | null) => void;
 
+  /**
+   * Гостевой режим: остров чужой и только на просмотр. Панели строительства и лопаты
+   * не блокируются, а отсутствуют — read-only означает read-only (§9 ТЗ).
+   */
+  guest: boolean;
+  setGuest: (guest: boolean) => void;
+
+  /** Код острова для гостей. Показывается владельцу и копируется одной кнопкой. */
+  visitCode: string | null;
+  setVisitCode: (code: string | null) => void;
+
   /** Остров сгенерирован и все чанки отрисованы. */
   worldReady: boolean;
   setWorldReady: (ready: boolean) => void;
@@ -149,6 +160,16 @@ export const useGameStore = create<GameState>()((set) => ({
   island: null,
   setIsland: (island) => {
     set({ island });
+  },
+
+  guest: false,
+  setGuest: (guest) => {
+    set({ guest, mode: 'look' });
+  },
+
+  visitCode: null,
+  setVisitCode: (visitCode) => {
+    set({ visitCode });
   },
 
   worldReady: false,

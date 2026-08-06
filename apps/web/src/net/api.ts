@@ -29,6 +29,11 @@ export interface IslandBrief {
 
 export interface IslandState {
   id: string;
+  /** Гостевой снимок: read-only. Строить и копать тут нельзя ничего. */
+  guest?: boolean;
+  name?: string;
+  visitCode?: string;
+  chapter?: number;
   seed: number;
   tick: number;
   hour: number;
@@ -106,6 +111,62 @@ export interface JournalEntry {
 export async function fetchJournal(id: string): Promise<JournalEntry[]> {
   const response = await call<{ entries: JournalEntry[] }>(`/islands/${id}/journal`);
   return response?.entries ?? [];
+}
+
+export function fetchIslandByCode(code: string): Promise<IslandState | null> {
+  return call<IslandState>(`/islands/by-code/${code}`);
+}
+
+export interface WaitingGift {
+  id: string;
+  kind: string;
+  messageId: string | null;
+  from: string;
+}
+
+export async function fetchGifts(id: string): Promise<WaitingGift[]> {
+  const response = await call<{ gifts: WaitingGift[] }>(`/islands/${id}/gifts`);
+  return response?.gifts ?? [];
+}
+
+/**
+ * Подарок уходит со склада гостя, поэтому отказ здесь — обычное дело: может не хватить.
+ * Ответ разбирается целиком, а не проверяется на «не упало»: иначе интерфейс радостно
+ * сообщит об успехе там, где сервер отказал.
+ */
+export async function sendGift(
+  id: string,
+  kind: string,
+  messageId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const response = await fetch(`${serverUrl}/islands/${id}/gifts`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ kind, messageId }),
+    });
+
+    if (response.ok) return { ok: true };
+
+    const body = (await response.json()) as { error?: string };
+    return { ok: false, error: body.error ?? 'Не получилось. Попробуй ещё раз' };
+  } catch {
+    return { ok: false, error: 'Сервер не отвечает. Подарок подождёт' };
+  }
+}
+
+export function claimGift(
+  islandId: string,
+  giftId: string,
+): Promise<{ resources: Record<string, number> } | null> {
+  return call<{ resources: Record<string, number> }>(`/islands/${islandId}/gifts/${giftId}/claim`, {
+    method: 'POST',
+  });
+}
+
+export function addFriend(code: string): Promise<unknown> {
+  return call(`/friends/${code}`, { method: 'POST' });
 }
 
 export function logout(): Promise<unknown> {

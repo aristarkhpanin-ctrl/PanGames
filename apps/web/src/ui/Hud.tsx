@@ -5,6 +5,7 @@ import { FILL_MATERIALS } from '../input/editing';
 import { BuildBar } from './BuildBar';
 import { BuildingCard } from './BuildingCard';
 import { ResourceBar } from './ResourceBar';
+import { GiftsWaiting, GuestBar, VisitCode } from './Guests';
 import { Journal } from './Journal';
 import { SignIn } from './SignIn';
 import { Welcome } from './Welcome';
@@ -45,6 +46,7 @@ export function Hud(): React.JSX.Element {
   const session = useGameStore((state) => state.session);
   const watching = useGameStore((state) => state.watching);
   const journalOpen = useGameStore((state) => state.journalOpen);
+  const guest = useGameStore((state) => state.guest);
   const toggleJournal = useGameStore((state) => state.toggleJournal);
   const serverStatus = useGameStore((state) => state.serverStatus);
   const notice = useGameStore((state) => state.notice);
@@ -80,7 +82,8 @@ export function Hud(): React.JSX.Element {
       <div className="hud-corner">
         <h1 className="hud-title">Гавань</h1>
         <p className="hud-note">{openingLine(worldReady, buildings.length, villagers)}</p>
-        {worldReady && <ResourceBar />}
+        {worldReady && !guest && <ResourceBar />}
+        {worldReady && <VisitCode />}
       </div>
 
       <button type="button" className="journal-button" onClick={toggleJournal}>
@@ -92,49 +95,53 @@ export function Hud(): React.JSX.Element {
       <BuildingCard />
       <BuildBar />
       <Journal />
+      <GiftsWaiting />
+      <GuestBar />
       <Welcome />
       <ChapterTitle />
 
-      <div className="hud-tools" role="status">
-        <span className="hud-mode">{MODE_LABEL[mode]}</span>
+      {!guest && (
+        <div className="hud-tools" role="status">
+          <span className="hud-mode">{MODE_LABEL[mode]}</span>
 
-        {mode === 'fill' && (
-          <span className="hud-choice">
-            <i
-              className="hud-swatch"
-              style={{ background: `#${(fillColor ?? 0).toString(16).padStart(6, '0')}` }}
-            />
-            {fillName}
+          {mode === 'fill' && (
+            <span className="hud-choice">
+              <i
+                className="hud-swatch"
+                style={{ background: `#${(fillColor ?? 0).toString(16).padStart(6, '0')}` }}
+              />
+              {fillName}
+            </span>
+          )}
+
+          {mode === 'plant' && plant !== undefined && (
+            <span className="hud-choice">
+              <i
+                className="hud-swatch"
+                style={{
+                  background: `#${materialColor(plant.material).toString(16).padStart(6, '0')}`,
+                }}
+              />
+              {plant.name.toLowerCase()}
+            </span>
+          )}
+
+          {(mode === 'dig' || mode === 'fill') && (
+            <span className="hud-choice">{brush === 0 ? 'одна клетка' : 'три на три'}</span>
+          )}
+
+          {moving !== null && <span className="hud-choice">переносим — это бесплатно</span>}
+
+          <span className="hud-hint">
+            1 смотреть · 2 копать · 3 насыпать · 4 сажать · 5 строить
+            {mode === 'fill' && ' · X материал · B кисть'}
+            {mode === 'plant' && ' · C растение'}
+            {mode === 'dig' && ' · B кисть'}
+            {mode === 'build' && ' · R повернуть'}
+            {' · V смотреть · Ctrl+Z отменить'}
           </span>
-        )}
-
-        {mode === 'plant' && plant !== undefined && (
-          <span className="hud-choice">
-            <i
-              className="hud-swatch"
-              style={{
-                background: `#${materialColor(plant.material).toString(16).padStart(6, '0')}`,
-              }}
-            />
-            {plant.name.toLowerCase()}
-          </span>
-        )}
-
-        {(mode === 'dig' || mode === 'fill') && (
-          <span className="hud-choice">{brush === 0 ? 'одна клетка' : 'три на три'}</span>
-        )}
-
-        {moving !== null && <span className="hud-choice">переносим — это бесплатно</span>}
-
-        <span className="hud-hint">
-          1 смотреть · 2 копать · 3 насыпать · 4 сажать · 5 строить
-          {mode === 'fill' && ' · X материал · B кисть'}
-          {mode === 'plant' && ' · C растение'}
-          {mode === 'dig' && ' · B кисть'}
-          {mode === 'build' && ' · R повернуть'}
-          {' · V смотреть · Ctrl+Z отменить'}
-        </span>
-      </div>
+        </div>
+      )}
 
       {serverStatus === 'unreachable' && (
         <p className="hud-link" role="status">

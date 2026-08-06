@@ -786,3 +786,96 @@ body {
     opacity: 0;
   }
 }
+
+/* Код острова для гостей. Ни счётчика посещений, ни оценок — просто код. */
+.visit-code {
+  display: block;
+  margin-top: calc(8px * var(--ui-scale));
+  padding: calc(5px * var(--ui-scale)) calc(11px * var(--ui-scale));
+  border: 0;
+  border-radius: 999px;
+  background: rgb(11 26 42 / 45%);
+  color: var(--sand);
+  font: inherit;
+  font-size: calc(12px * var(--ui-scale));
+  cursor: pointer;
+  opacity: 0.75;
+}
+
+/* Подарки в порту. Ждут сколько угодно: срока годности нет. */
+.gifts {
+  position: absolute;
+  left: calc(20px * var(--ui-scale));
+  bottom: calc(90px * var(--ui-scale));
+  width: calc(260px * var(--ui-scale));
+  padding: calc(14px * var(--ui-scale));
+  border-radius: 12px;
+  background: rgb(11 26 42 / 88%);
+  color: var(--sand);
+}
+
+.gifts-title {
+  margin: 0 0 calc(10px * var(--ui-scale));
+  font-family: var(--font-display);
+  font-size: calc(14px * var(--ui-scale));
+  font-weight: 500;
+}
+
+.gift {
+  padding-top: calc(8px * var(--ui-scale));
+}
+
+.gift-name {
+  margin: 0;
+  font-size: calc(13px * var(--ui-scale));
+}
+
+.gift-card {
+  margin: calc(2px * var(--ui-scale)) 0 calc(8px * var(--ui-scale));
+  font-family: var(--font-journal);
+  font-size: calc(17px * var(--ui-scale));
+  opacity: 0.85;
+}
+
+/* Панель гостя. Строить и копать нечем — этих панелей просто нет. */
+.guest-bar {
+  position: absolute;
+  bottom: calc(18px * var(--ui-scale));
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: calc(10px * var(--ui-scale));
+  align-items: center;
+  padding: calc(9px * var(--ui-scale)) calc(16px * var(--ui-scale));
+  border-radius: 999px;
+  background: rgb(11 26 42 / 72%);
+  color: var(--sand);
+  font-size: calc(13px * var(--ui-scale));
+}
+
+.guest-note {
+  opacity: 0.75;
+}
+
+.guest-select {
+  max-width: calc(200px * var(--ui-scale));
+  padding: calc(4px * var(--ui-scale)) calc(8px * var(--ui-scale));
+  border: 1px solid rgb(234 217 176 / 20%);
+  border-radius: 8px;
+  background: rgb(255 255 255 / 6%);
+  color: var(--sand);
+  font: inherit;
+  font-size: calc(12px * var(--ui-scale));
+}
+
+.guest-send {
+  padding: calc(5px * var(--ui-scale)) calc(12px * var(--ui-scale));
+  border: 0;
+  border-radius: 999px;
+  background: var(--lamp);
+  color: #2a2113;
+  font: inherit;
+  font-size: calc(13px * var(--ui-scale));
+  font-weight: 500;
+  cursor: pointer;
+}

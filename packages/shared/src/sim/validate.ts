@@ -9,6 +9,7 @@ import { buildingType, type BuildingType } from '../content/buildings';
 import { plantKind } from '../content/plants';
 import { canAfford, footprintOf, upgradeCost, type PlacedBuilding } from './economy';
 import { FESTIVAL_COST } from './festival';
+import { costInShells, hasHarbor, MAX_TRADE_AMOUNT, shellsForGiving, TRADABLE } from './trade';
 import { isOpaque, Material, SEA_LEVEL, WORLD_X, WORLD_Y, WORLD_Z, columnIndex } from '../voxels';
 import { isInside, surfaceHeight, type WorldReader, type WorldState } from './world';
 
@@ -107,10 +108,48 @@ export function validate(
       if (!canAfford(state.resources, FESTIVAL_COST)) return reject('cannot_afford');
       return ACCEPTED;
     }
+    case 'trade':
+      return validateTrade(command, state);
     default:
       // `rename` появится вместе с интерфейсом переименования. Форма контракта уже есть.
       return reject('not_implemented');
   }
+}
+
+/**
+ * Обмен у лодки (§4 ТЗ).
+ *
+ * Курс один и тот же всегда: спекулировать не на чем, дефицита не бывает. Лодка нужна ровно
+ * затем, чтобы у игрока не кончился камень насовсем.
+ */
+function validateTrade(
+  command: Extract<Command, { t: 'trade' }>,
+  state: WorldState,
+): ValidationResult {
+  if (!hasHarbor(state.buildings)) return reject('needs_harbor');
+  if (command.give === undefined && command.take === undefined) return reject('empty_command');
+
+  if (command.give !== undefined) {
+    if (!TRADABLE.includes(command.give.id)) return reject('not_tradable');
+    if (command.give.amount <= 0 || command.give.amount > MAX_TRADE_AMOUNT) {
+      return reject('too_much');
+    }
+    if (state.resources[command.give.id] < command.give.amount) return reject('cannot_afford');
+  }
+
+  if (command.take !== undefined) {
+    if (!TRADABLE.includes(command.take.id)) return reject('not_tradable');
+    if (command.take.amount <= 0 || command.take.amount > MAX_TRADE_AMOUNT) {
+      return reject('too_much');
+    }
+
+    // Ракушки считаются с учётом того, что даём в этой же сделке: сдал камень — купил доски.
+    const earned = command.give === undefined ? 0 : shellsForGiving(command.give.amount);
+    const price = costInShells(command.take.id, command.take.amount);
+    if (state.resources.shell + earned < price) return reject('cannot_afford');
+  }
+
+  return ACCEPTED;
 }
 
 function validateTerraform(

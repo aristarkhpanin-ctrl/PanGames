@@ -5,6 +5,7 @@ import { WORLD_Y, voxelIndex } from '../voxels';
 import { deriveSeed } from '../worldgen/rng';
 import { footprintOf, refundOf, upgradeCost, type PlacedBuilding } from './economy';
 import { FESTIVAL_COST, FESTIVAL_INSPIRATION } from './festival';
+import { costInShells, shellsForGiving } from './trade';
 import {
   EMPTY_EFFECT,
   surfaceHeight,
@@ -135,6 +136,23 @@ export function applyCommand(
         ...EMPTY_EFFECT,
         resources: { ...negate(FESTIVAL_COST), inspiration: FESTIVAL_INSPIRATION },
       };
+
+    case 'trade': {
+      const resources: Partial<Record<ResourceId, number>> = {};
+
+      if (command.give !== undefined) {
+        resources[command.give.id] = -command.give.amount;
+        resources.shell = shellsForGiving(command.give.amount);
+      }
+
+      if (command.take !== undefined) {
+        const price = costInShells(command.take.id, command.take.amount);
+        resources[command.take.id] = (resources[command.take.id] ?? 0) + command.take.amount;
+        resources.shell = (resources.shell ?? 0) - price;
+      }
+
+      return { ...EMPTY_EFFECT, resources };
+    }
 
     default:
       return EMPTY_EFFECT;

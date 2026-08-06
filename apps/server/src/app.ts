@@ -9,6 +9,7 @@ import { createDb, type Database } from './db/client';
 import { IslandRuntime } from './island/runtime';
 import { ConsoleMail, type MailTransport } from './mail/transport';
 import { registerAuthRoutes, SESSION_COOKIE } from './routes/auth';
+import { registerGuestRoutes } from './routes/guests';
 import { MAX_BODY_BYTES, registerIslandRoutes } from './routes/islands';
 import { registerWebSocket } from './ws/hub';
 
@@ -48,6 +49,7 @@ export async function createApp(config: Config, parts?: AppParts): Promise<Fasti
   app.get('/health', () => ({ ok: true }));
   registerAuthRoutes(app, database.db, config, mail);
   registerIslandRoutes(app, database.db, runtime);
+  registerGuestRoutes(app, database.db, runtime);
   await registerWebSocket(app, database.db, runtime);
 
   app.addHook('onClose', async () => {

@@ -47,6 +47,8 @@ export * from './content/journalTemplates';
 export * from './sim/journal';
 export * from './sim/social';
 export * from './sim/festival';
+export * from './sim/trade';
+export * from './content/postcards';
 export * from './sim/wishes';
 export * from './content/chapters';
 export * from './save';
