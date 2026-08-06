@@ -46,6 +46,10 @@ import { Water } from './water';
 /** Реальных секунд в игровом часе (§3 ТЗ). Игровые сутки — 24 минуты. */
 const SECONDS_PER_GAME_HOUR = 60;
 
+/** Угол обзора и соотношение сторон, под которые подобрана картинка: обычное окно ноутбука. */
+const BASE_FOV = 50;
+const BASE_ASPECT = 16 / 10;
+
 export interface SceneHandle {
   dispose(): void;
 }
@@ -81,7 +85,14 @@ export async function createScene(
   const highlight = new Highlight();
   const ghost = new Ghost();
   const lighting = new Lighting(scene);
-  const controls = new CameraControls(camera, canvas);
+  // Камера получает касания первой: только она знает, сколько пальцев на экране. То, что
+  // ей не принадлежит — короткое нажатие и протяжка призрака, — она отдаёт правкам мира.
+  const controls = new CameraControls(camera, canvas, {
+    tap: (x, y) => {
+      editing.touchTap(x, y);
+    },
+    drag: (x, y) => editing.touchDrag(x, y),
+  });
   const debug = new DebugOverlay(renderer);
   const watch = new WatchMode();
   const ambient = new Ambient();
@@ -197,6 +208,10 @@ export async function createScene(
     onBuildingsChanged,
   );
 
+  useGameStore.getState().setConfirmBuild(() => {
+    editing.confirmPlacement();
+  });
+
   let hour = initial.hour;
 
   /**
@@ -300,6 +315,18 @@ export async function createScene(
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(width, height, false);
     camera.aspect = width / height;
+
+    /*
+     * На телефоне экран узкий и высокий. Если оставить угол обзора по вертикали, поперёк
+     * острова окажется втрое меньше, чем на ноутбуке, и камера утыкается в первое же дерево.
+     * Поэтому по вертикали угол расширяется так, чтобы поперечный обзор оставался прежним.
+     */
+    const wide = Math.max(camera.aspect, BASE_ASPECT);
+    camera.fov =
+      THREE.MathUtils.radToDeg(
+        Math.atan(Math.tan(THREE.MathUtils.degToRad(BASE_FOV) / 2) * (wide / camera.aspect)),
+      ) * 2;
+
     camera.updateProjectionMatrix();
   };
 
@@ -387,6 +414,7 @@ export async function createScene(
       window.removeEventListener('keydown', startAudio);
       ambient.dispose();
       useGameStore.getState().setSender(null);
+      useGameStore.getState().setConfirmBuild(null);
       link.dispose();
       editing.dispose();
       controls.dispose();

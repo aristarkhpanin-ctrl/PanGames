@@ -96,6 +96,13 @@ interface GameState {
   send: ((command: Command) => void) | null;
   setSender: (send: ((command: Command) => void) | null) => void;
 
+  /**
+   * Поставить здание туда, где сейчас призрак. На телефоне это кнопка, а не щелчок:
+   * палец закрывает место установки, и «ткнуть точно» им нельзя.
+   */
+  confirmBuild: (() => void) | null;
+  setConfirmBuild: (confirm: (() => void) | null) => void;
+
   /** Развёрнут ли полный список ресурсов. По умолчанию видны четыре (§8 ТЗ). */
   resourcesOpen: boolean;
   toggleResources: () => void;
@@ -136,6 +143,13 @@ interface GameState {
   /** Лодка причалила: только с этого момента появляется та самая единственная строка. */
   moored: boolean;
   setMoored: (moored: boolean) => void;
+
+  /**
+   * Игрок трогает экран пальцем. Определяется по первому касанию, а не по ширине окна:
+   * узкое окно на ноутбуке — это не телефон, а телефон, повёрнутый боком, — не десктоп.
+   */
+  touch: boolean;
+  setTouch: (touch: boolean) => void;
 
   /** Зеркало жителей из воркера симуляции. React читает отсюда, сцена сюда пишет. */
   villagers: readonly Villager[];
@@ -276,6 +290,11 @@ export const useGameStore = create<GameState>()((set) => ({
     set({ send });
   },
 
+  confirmBuild: null,
+  setConfirmBuild: (confirmBuild) => {
+    set({ confirmBuild });
+  },
+
   resourcesOpen: false,
   toggleResources: () => {
     set((state) => ({ resourcesOpen: !state.resourcesOpen }));
@@ -323,6 +342,12 @@ export const useGameStore = create<GameState>()((set) => ({
   moored: false,
   setMoored: (moored) => {
     set({ moored });
+  },
+
+  touch: false,
+  setTouch: (touch) => {
+    if (useGameStore.getState().touch === touch) return;
+    set({ touch });
   },
 
   villagers: [],

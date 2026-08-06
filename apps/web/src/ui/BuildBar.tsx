@@ -43,6 +43,7 @@ export function BuildBar(): React.JSX.Element | null {
   const buildings = useGameStore((state) => state.buildings);
   const rotation = useGameStore((state) => state.buildRotation);
   const guest = useGameStore((state) => state.guest);
+  const touch = useGameStore((state) => state.touch);
 
   const [category, setCategory] = useState<BuildingCategory>('home');
 
@@ -84,11 +85,71 @@ export function BuildBar(): React.JSX.Element | null {
         ))}
       </div>
 
-      <p className="build-hint">
-        {chosen === null
-          ? 'Выбери, что построить. Здание можно повернуть и перенести — это бесплатно'
-          : `Поворот R · сейчас ${String(rotation * 90)}° · Escape чтобы передумать`}
-      </p>
+      {touch ? (
+        <TouchBuildControls chosen={chosen} rotation={rotation} />
+      ) : (
+        <p className="build-hint">
+          {chosen === null
+            ? 'Выбери, что построить. Здание можно повернуть и перенести — это бесплатно'
+            : `Поворот R · сейчас ${String(rotation * 90)}° · Escape чтобы передумать`}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Строительство пальцем (§8 ТЗ, мобильное управление).
+ *
+ * Здание не ставится касанием по острову: палец закрывает как раз то место, куда целятся,
+ * и промах был бы правилом, а не исключением. Палец водит призрак, а ставит — кнопка.
+ */
+function TouchBuildControls({
+  chosen,
+  rotation,
+}: {
+  chosen: string | null;
+  rotation: 0 | 1 | 2 | 3;
+}): React.JSX.Element {
+  const rotate = useGameStore((state) => state.rotateBuild);
+  const confirm = useGameStore((state) => state.confirmBuild);
+  const moving = useGameStore((state) => state.movingBuildingId);
+  const cancel = useGameStore((state) => state.setMode);
+
+  if (chosen === null && moving === null) {
+    return <p className="build-hint">Выбери, что построить, — потом веди пальцем по острову</p>;
+  }
+
+  return (
+    <div className="build-touch">
+      <button
+        type="button"
+        className="build-touch-button"
+        onClick={rotate}
+        aria-label={`Повернуть, сейчас ${String(rotation * 90)} градусов`}
+      >
+        повернуть {rotation * 90}°
+      </button>
+
+      <button
+        type="button"
+        className="build-touch-button build-touch-main"
+        onClick={() => {
+          confirm?.();
+        }}
+      >
+        поставить сюда
+      </button>
+
+      <button
+        type="button"
+        className="build-touch-button"
+        onClick={() => {
+          cancel('look');
+        }}
+      >
+        передумать
+      </button>
     </div>
   );
 }

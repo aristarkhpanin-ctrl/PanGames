@@ -50,6 +50,7 @@ export function Hud(): React.JSX.Element {
   const guest = useGameStore((state) => state.guest);
   const arrival = useGameStore((state) => state.arrival);
   const moored = useGameStore((state) => state.moored);
+  const touch = useGameStore((state) => state.touch);
   const toggleJournal = useGameStore((state) => state.toggleJournal);
   const serverStatus = useGameStore((state) => state.serverStatus);
   const notice = useGameStore((state) => state.notice);
@@ -113,7 +114,9 @@ export function Hud(): React.JSX.Element {
       <Welcome />
       <ChapterTitle />
 
-      {!guest && (
+      {!guest && touch && <TouchTools />}
+
+      {!guest && !touch && (
         <div className="hud-tools" role="status">
           <span className="hud-mode">{MODE_LABEL[mode]}</span>
 
@@ -166,6 +169,88 @@ export function Hud(): React.JSX.Element {
     </>
   );
 }
+
+/**
+ * Инструменты для пальца (§8 ТЗ, мобильное управление).
+ *
+ * На телефоне клавиш 1–5 нет, а значит, без этого ряда до строительства и лопаты
+ * не добраться вовсе. Кнопки крупные и подписаны словом: значок без подписи пришлось бы
+ * угадывать, а игра не про угадывание.
+ */
+function TouchTools(): React.JSX.Element {
+  const mode = useGameStore((state) => state.mode);
+  const setMode = useGameStore((state) => state.setMode);
+  const brush = useGameStore((state) => state.brush);
+  const toggleBrush = useGameStore((state) => state.toggleBrush);
+  const fillIndex = useGameStore((state) => state.fillIndex);
+  const cycleFill = useGameStore((state) => state.cycleFill);
+  const plantIndex = useGameStore((state) => state.plantIndex);
+  const cyclePlant = useGameStore((state) => state.cyclePlant);
+
+  const plant = PLANTS[plantIndex % PLANTS.length];
+  const fillName = FILL_LABEL[fillIndex % FILL_LABEL.length] ?? 'землю';
+
+  return (
+    <div className="touch-tools">
+      {(mode === 'fill' || mode === 'plant' || mode === 'dig') && (
+        <div className="touch-row touch-row-quiet">
+          {mode === 'fill' && (
+            <button
+              type="button"
+              className="touch-tool"
+              onClick={() => {
+                cycleFill(FILL_MATERIALS.length);
+              }}
+            >
+              {fillName}
+            </button>
+          )}
+          {mode === 'plant' && plant !== undefined && (
+            <button
+              type="button"
+              className="touch-tool"
+              onClick={() => {
+                cyclePlant(PLANTS.length);
+              }}
+            >
+              {plant.name.toLowerCase()}
+            </button>
+          )}
+          {(mode === 'dig' || mode === 'fill') && (
+            <button type="button" className="touch-tool" onClick={toggleBrush}>
+              {brush === 0 ? 'одна клетка' : 'три на три'}
+            </button>
+          )}
+        </div>
+      )}
+
+      <div className="touch-row">
+        {(Object.keys(MODE_LABEL) as EditMode[]).map((id) => (
+          <button
+            key={id}
+            type="button"
+            className={id === mode ? 'touch-tool touch-tool-on' : 'touch-tool'}
+            onClick={() => {
+              setMode(id);
+            }}
+            aria-pressed={id === mode}
+          >
+            {TOUCH_LABEL[id]}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Подписи кнопок: не «Копаю», а «копать» — на кнопке пишут действие, а не состояние. */
+const TOUCH_LABEL: Record<EditMode, string> = {
+  look: 'смотреть',
+  dig: 'копать',
+  fill: 'насыпать',
+  plant: 'сажать',
+  build: 'строить',
+};
 
 /**
  * Первая строка на экране. Пустое состояние не сообщает о пустоте, а подсказывает первый шаг

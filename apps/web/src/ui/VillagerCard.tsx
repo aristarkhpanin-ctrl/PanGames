@@ -114,6 +114,12 @@ export function VillagerColumn({
 }): React.JSX.Element {
   const selected = useGameStore((state) => state.selectedVillager);
   const select = useGameStore((state) => state.selectVillager);
+  const touch = useGameStore((state) => state.touch);
+  const mode = useGameStore((state) => state.mode);
+
+  // На телефоне список жителей и панель строительства не помещаются вместе, и список уходит:
+  // пока человек ставит дом, ему нужен остров, а не четыре карточки поверх него.
+  if (touch && mode === 'build') return <></>;
 
   return (
     <nav className="column" aria-label="Жители">

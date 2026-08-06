@@ -52,6 +52,8 @@ body {
   display: block;
   width: 100%;
   height: 100%;
+  /* Жесты забирает игра: иначе браузер начнёт листать страницу вместо панорамы острова. */
+  touch-action: none;
 }
 
 /* React живёт поверх канваса и сам по себе кликов не перехватывает. */
@@ -933,4 +935,162 @@ body {
   .arrival-line {
     animation: none;
   }
+}
+
+/*
+ * Строительство пальцем (§8 ТЗ, мобильное управление). Кнопки крупные: 44 пикселя —
+ * это не «побольше для красоты», а размер подушечки пальца.
+ */
+.build-touch {
+  display: flex;
+  gap: calc(8px * var(--ui-scale));
+  margin-top: calc(10px * var(--ui-scale));
+}
+
+.build-touch-button {
+  flex: 1;
+  min-height: calc(44px * var(--ui-scale));
+  padding: calc(10px * var(--ui-scale)) calc(12px * var(--ui-scale));
+  border: 0;
+  border-radius: 12px;
+  background: rgb(11 26 42 / 72%);
+  color: var(--sand);
+  font: inherit;
+  font-size: calc(13px * var(--ui-scale));
+  cursor: pointer;
+}
+
+.build-touch-main {
+  flex: 1.6;
+  background: var(--lamp);
+  color: #1b2a10;
+  font-weight: 500;
+}
+
+/*
+ * Узкий экран (§8 ТЗ). Телефон определяется по ширине только для раскладки; то, пальцем
+ * играют или мышью, решает первое касание — узкое окно на ноутбуке телефоном не является.
+ */
+@media (max-width: 720px) {
+  /* Панель жителей уезжает вниз: сверху справа она перекрывала бы половину острова. */
+  .column {
+    top: auto;
+    right: calc(10px * var(--ui-scale));
+    bottom: calc(112px * var(--ui-scale));
+    left: calc(10px * var(--ui-scale));
+    flex-direction: row;
+    overflow-x: auto;
+    padding-bottom: calc(4px * var(--ui-scale));
+    scrollbar-width: none;
+  }
+
+  .column-item {
+    flex: 0 0 auto;
+    min-height: calc(40px * var(--ui-scale));
+  }
+
+  /* Карточки занимают ширину экрана и ложатся снизу: сбоку для них места нет. */
+  .card,
+  .journal {
+    top: auto;
+    right: calc(10px * var(--ui-scale));
+    bottom: calc(112px * var(--ui-scale));
+    left: calc(10px * var(--ui-scale));
+    width: auto;
+    max-height: 48vh;
+    overflow-y: auto;
+  }
+
+  .build-bar {
+    right: calc(8px * var(--ui-scale));
+    bottom: calc(104px * var(--ui-scale));
+    left: calc(8px * var(--ui-scale));
+    width: auto;
+    max-width: none;
+    transform: none;
+  }
+
+  /*
+   * На телефоне панель не должна съедать остров: целиться-то надо по нему. Список
+   * прокручивается, а не растёт, и карточки становятся компактнее.
+   */
+  .build-list {
+    grid-template-columns: repeat(auto-fill, minmax(calc(130px * var(--ui-scale)), 1fr));
+    max-height: 22vh;
+    overflow-y: auto;
+  }
+
+  .build-card {
+    padding: calc(8px * var(--ui-scale)) calc(10px * var(--ui-scale));
+  }
+
+  .build-tabs {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  /* Подсказка по клавишам на телефоне бессмысленна: клавиш нет. */
+  .hud-hint {
+    display: none;
+  }
+
+  /* Область попадания не меньше подушечки пальца. */
+  .journal-button,
+  .scale-button,
+  .card-close,
+  .card-action,
+  .build-tab,
+  .visit-code,
+  .resource-bar {
+    min-height: calc(40px * var(--ui-scale));
+  }
+}
+
+/*
+ * Ряд инструментов для пальца. На телефоне это единственный способ попасть в строительство
+ * и лопату: клавиш 1–5 там нет. Ряд всегда внизу и ничем не перекрывается — остальные
+ * панели встают над ним.
+ */
+.touch-tools {
+  position: absolute;
+  right: calc(8px * var(--ui-scale));
+  bottom: calc(8px * var(--ui-scale));
+  left: calc(8px * var(--ui-scale));
+  display: flex;
+  flex-direction: column;
+  gap: calc(6px * var(--ui-scale));
+}
+
+.touch-row {
+  display: flex;
+  gap: calc(6px * var(--ui-scale));
+}
+
+.touch-row-quiet {
+  justify-content: flex-start;
+}
+
+.touch-tool {
+  flex: 1;
+  min-height: calc(44px * var(--ui-scale));
+  padding: calc(8px * var(--ui-scale)) calc(6px * var(--ui-scale));
+  border: 0;
+  border-radius: 12px;
+  background: rgb(11 26 42 / 72%);
+  color: var(--sand);
+  font: inherit;
+  font-size: calc(13px * var(--ui-scale));
+  cursor: pointer;
+}
+
+.touch-row-quiet .touch-tool {
+  flex: 0 1 auto;
+  padding-right: calc(14px * var(--ui-scale));
+  padding-left: calc(14px * var(--ui-scale));
+}
+
+.touch-tool-on {
+  background: rgb(11 26 42 / 92%);
+  color: var(--lamp);
+  font-weight: 500;
 }

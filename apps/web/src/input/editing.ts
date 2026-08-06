@@ -55,6 +55,14 @@ export const REJECT_TEXT: Partial<Record<RejectReason, string>> = {
   home_full: 'Все кровати заняты. Построй ещё один дом.',
 };
 
+/**
+ * На сколько призрак здания поднят над пальцем (§8 ТЗ, мобильное управление).
+ *
+ * Палец закрывает ровно ту точку, куда целятся. Смещение вверх на полтора сантиметра
+ * возвращает место установки в поле зрения.
+ */
+const TOUCH_LIFT = 56;
+
 export class Editing {
   private pointer: { x: number; y: number } | null = null;
   private painting = false;
@@ -83,12 +91,16 @@ export class Editing {
 
   private bind(): void {
     const onMove = (event: PointerEvent): void => {
+      // Касания разбирает камера: она одна знает, сколько пальцев на экране.
+      if (event.pointerType === 'touch') return;
       const rect = this.canvas.getBoundingClientRect();
       this.pointer = { x: event.clientX - rect.left, y: event.clientY - rect.top };
       if (this.painting) void this.paint();
     };
 
     const onDown = (event: PointerEvent): void => {
+      if (event.pointerType === 'touch') return;
+
       // Левая кнопка без модификаторов: остальное забирает камера.
       if (event.button !== 0 || event.altKey) return;
       if (this.spaceHeld) return;
@@ -124,7 +136,10 @@ export class Editing {
       this.lastPainted = '';
     };
 
-    const onLeave = (): void => {
+    const onLeave = (event: PointerEvent): void => {
+      // Палец «уходит» с канваса в конце каждого касания. Забывать наведённое место из-за
+      // этого нельзя: на телефоне между наводкой и кнопкой «поставить» проходит секунда.
+      if (event.pointerType === 'touch') return;
       this.pointer = null;
       this.highlight.hide();
     };
@@ -209,6 +224,54 @@ export class Editing {
         window.removeEventListener('keyup', onKeyUp);
       },
     );
+  }
+
+  /**
+   * Короткое касание по острову (§8 ТЗ, мобильное управление).
+   *
+   * В режиме строительства оно только переставляет призрак — ставит здание отдельная кнопка.
+   * Так на телефоне нельзя построить дом случайным касанием, а посмотреть, как он встанет,
+   * можно сколько угодно.
+   */
+  touchTap(x: number, y: number): void {
+    if (this.store.arrival === 'playing') return;
+    this.store.setTouch(true);
+    this.aimAt(x, y);
+
+    if (this.store.mode === 'build' && !this.store.guest) return;
+
+    if (this.store.guest || this.store.mode === 'look') {
+      this.selectUnderCursor();
+      return;
+    }
+
+    this.lastPainted = '';
+    void this.paint();
+  }
+
+  /**
+   * Протяжка одним пальцем. В режиме строительства её забирает призрак, и камера стоит;
+   * в остальных случаях возвращаем `false` — пусть остров едет за пальцем.
+   */
+  touchDrag(x: number, y: number): boolean {
+    if (this.store.arrival === 'playing') return false;
+    if (this.store.guest || this.store.mode !== 'build') return false;
+
+    this.store.setTouch(true);
+    this.aimAt(x, y);
+    return true;
+  }
+
+  /** Поставить то, что сейчас под призраком. Кнопка на телефоне вместо щелчка мышью. */
+  confirmPlacement(): void {
+    void this.placeBuilding();
+  }
+
+  /** Куда целится палец. В строительстве точка поднимается: иначе её закрывает сам палец. */
+  private aimAt(x: number, y: number): void {
+    const rect = this.canvas.getBoundingClientRect();
+    const lift = this.store.mode === 'build' ? TOUCH_LIFT : 0;
+    this.pointer = { x: x - rect.left, y: y - rect.top - lift };
   }
 
   /** Подсветка обновляется каждый кадр: под курсором мог измениться и мир, и режим. */
@@ -363,7 +426,15 @@ export class Editing {
     }
 
     const pos = this.placementAt(typeId, this.store.buildRotation);
-    if (pos === null) return;
+    if (pos === null) {
+      // Нажали кнопку — значит, ждут ответа. Молчание здесь читалось бы как поломка.
+      this.store.setNotice(
+        this.store.touch
+          ? 'Сначала укажи место — веди пальцем по острову'
+          : 'Наведись на остров: отсюда ставить некуда',
+      );
+      return;
+    }
 
     const command = this.buildCommandAt(pos);
     if (command === null) return;
