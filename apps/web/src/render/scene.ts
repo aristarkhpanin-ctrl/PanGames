@@ -107,6 +107,12 @@ export async function createScene(
   window.addEventListener('pointerdown', startAudio);
   window.addEventListener('keydown', startAudio);
 
+  // Кнопка выключения живёт в React, микшер — в Web Audio; связывает их одна подписка.
+  ambient.setMuted(useGameStore.getState().muted);
+  const unwatchMute = useGameStore.subscribe((state, previous) => {
+    if (state.muted !== previous.muted) ambient.setMuted(state.muted);
+  });
+
   scene.add(
     terrain.group,
     water.group,
@@ -412,6 +418,7 @@ export async function createScene(
       firstSpot?.dispose();
       window.removeEventListener('pointerdown', startAudio);
       window.removeEventListener('keydown', startAudio);
+      unwatchMute();
       ambient.dispose();
       useGameStore.getState().setSender(null);
       useGameStore.getState().setConfirmBuild(null);

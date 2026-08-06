@@ -7,7 +7,7 @@ import { BuildingCard } from './BuildingCard';
 import { ResourceBar } from './ResourceBar';
 import { GiftsWaiting, GuestBar, VisitCode } from './Guests';
 import { Journal } from './Journal';
-import { ScaleButton } from './Settings';
+import { MuteButton, ScaleButton } from './Settings';
 import { SignIn } from './SignIn';
 import { Welcome } from './Welcome';
 import { ChapterTitle } from './ChapterTitle';
@@ -98,6 +98,7 @@ export function Hud(): React.JSX.Element {
       </div>
 
       <div className="hud-top">
+        <MuteButton />
         <ScaleButton />
         <button type="button" className="journal-button" onClick={toggleJournal}>
           {journalOpen ? 'закрыть дневник' : 'дневник'}

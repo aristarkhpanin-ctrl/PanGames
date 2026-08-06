@@ -2,6 +2,8 @@ import type { CatchUpEvent, Command, PlacedBuilding, ResourceId, Villager } from
 import { BASE_STORAGE_CAP, startingResources } from '@gavan/shared';
 import { create } from 'zustand';
 
+import { savedMuted } from '../audio/ambient';
+
 /**
  * Единственный стор клиента: состояние интерфейса и зеркало игрового состояния.
  * React читает отсюда и ничего не знает про сцену; сцена пишет сюда и ничего не знает про React.
@@ -150,6 +152,13 @@ interface GameState {
    */
   touch: boolean;
   setTouch: (touch: boolean) => void;
+
+  /**
+   * Звук выключен. Выбор живёт рядом с браузером, а сцена подписывается на него и передаёт
+   * микшеру: React не знает про Web Audio, а микшер не знает про React.
+   */
+  muted: boolean;
+  toggleMuted: () => void;
 
   /** Зеркало жителей из воркера симуляции. React читает отсюда, сцена сюда пишет. */
   villagers: readonly Villager[];
@@ -348,6 +357,11 @@ export const useGameStore = create<GameState>()((set) => ({
   setTouch: (touch) => {
     if (useGameStore.getState().touch === touch) return;
     set({ touch });
+  },
+
+  muted: savedMuted(),
+  toggleMuted: () => {
+    set((state) => ({ muted: !state.muted }));
   },
 
   villagers: [],

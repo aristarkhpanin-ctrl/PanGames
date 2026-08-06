@@ -25,3 +25,24 @@ export function ScaleButton(): React.JSX.Element {
     </button>
   );
 }
+
+/**
+ * Выключить звук. Отдельной кнопкой, а не в глубине настроек: человек, которому звук
+ * мешает прямо сейчас, не должен искать, где его убрать.
+ */
+export function MuteButton(): React.JSX.Element {
+  const muted = useGameStore((state) => state.muted);
+  const toggle = useGameStore((state) => state.toggleMuted);
+
+  return (
+    <button
+      type="button"
+      className="scale-button"
+      onClick={toggle}
+      aria-pressed={muted}
+      aria-label={muted ? 'Звук выключен, нажми чтобы включить' : 'Звук включён, нажми чтобы выключить'}
+    >
+      {muted ? 'звук выключен' : 'звук'}
+    </button>
+  );
+}
