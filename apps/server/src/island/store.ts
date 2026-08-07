@@ -5,6 +5,7 @@ import {
   buildNavGrid,
   createStartingVillagers,
   createWorldState,
+  DEFAULT_SETTINGS,
   findLandingSite,
   findScenicSpots,
   findSpawns,
@@ -19,6 +20,7 @@ import {
   TICKS_PER_HOUR,
   voxelIndex,
   type GeneratedIsland,
+  type IslandSettings,
   type NavGrid,
   type Vec3,
   type Villager,
@@ -60,6 +62,8 @@ export interface LiveIsland {
   festivalUntilTick?: number;
   /** Серверное время последнего расчёта. Только по нему считается догон (§9 ТЗ). */
   lastTickAt: Date;
+  /** Настройки, которые задаёт игрок. Пока их ровно одна — семьи (§5 ТЗ). */
+  settings: IslandSettings;
   /** Есть ли несохранённые изменения. Запись идёт пачками, а не на каждый тик. */
   dirty: boolean;
   /**
@@ -67,6 +71,17 @@ export interface LiveIsland {
    * состояние, — и на этом исчезает: экран «Пока тебя не было» показывается однажды.
    */
   pendingCatchUp: CatchUpEvent[] | null;
+}
+
+/**
+ * Настройки из `meta`. Отдельной колонки ради одного флага заводить незачем, а форма
+ * читается с оглядкой: остров мог быть сохранён до того, как настройки появились.
+ */
+function readSettings(meta: Record<string, unknown>): IslandSettings {
+  const stored = meta.settings;
+  if (typeof stored !== 'object' || stored === null) return DEFAULT_SETTINGS;
+  const families = (stored as { families?: unknown }).families;
+  return { families: families === true };
 }
 
 /** Короткий код для гостей. Без похожих букв: код диктуют вслух. */
@@ -92,6 +107,7 @@ export function hydrate(
   people: Villager[],
   lastTickAt: Date = new Date(),
   chapter: Chapter = 1,
+  settings: IslandSettings = DEFAULT_SETTINGS,
 ): LiveIsland {
   const generated = generateIsland(seed);
 
@@ -116,6 +132,7 @@ export function hydrate(
     chapter,
     festivals: 0,
     lastTickAt,
+    settings: { ...settings },
     dirty: false,
     pendingCatchUp: null,
   };
@@ -155,6 +172,7 @@ export async function loadIsland(db: Database, id: string): Promise<LiveIsland |
     people.map((p) => p.data),
     row.islands.lastTickAt,
     row.islands.chapter as Chapter,
+    readSettings(row.island_state.meta),
   );
 }
 
@@ -180,6 +198,7 @@ export async function saveIsland(db: Database, live: LiveIsland): Promise<void> 
       .set({
         resources: live.world.resources,
         worldPatch: snapshot,
+        meta: { settings: live.settings },
         version: SNAPSHOT_VERSION,
         updatedAt: new Date(),
       })

@@ -2,6 +2,7 @@ import type { Command } from '../commands';
 import { buildingType, JOB_TRAIT } from '../content/buildings';
 import type { TraitId, Villager } from '../types';
 import { freeBeds, freeWorkPlaces, homeOf, jobOf, type PlacedBuilding } from './economy';
+import { canWork } from './family';
 import type { WorldState } from './world';
 
 /**
@@ -18,6 +19,8 @@ import type { WorldState } from './world';
 export interface AutoAssignOptions {
   /** Кого игрок снял с работы вручную. Таких не трогаем, пока он не решит иначе. */
   detached?: ReadonlySet<string>;
+  /** Текущий тик: нужен, чтобы отличить ребёнка от взрослого. */
+  tick?: number;
 }
 
 export function autoAssignments(
@@ -27,6 +30,7 @@ export function autoAssignments(
 ): Command[] {
   const commands: Command[] = [];
   const detached = options.detached ?? new Set<string>();
+  const tick = options.tick ?? 0;
 
   // Занятые места учитываются по ходу дела: иначе за один заход в один дом заселили бы всех.
   const takenBeds = new Map<string, number>();
@@ -44,6 +48,8 @@ export function autoAssignments(
 
   for (const villager of villagers) {
     if (detached.has(villager.id)) continue;
+    // Ребёнок не работает (§5 ТЗ). Дом ему при этом ищется наравне со всеми.
+    if (!canWork(villager, tick)) continue;
     if (jobOf(state.buildings, villager.id) !== undefined) continue;
 
     const job = bestJob(state.buildings, villager, takenJobs);

@@ -68,6 +68,7 @@ async function boot(canvasElement: HTMLCanvasElement): Promise<void> {
 
   store.setIsland({ id: chosen.id, name: chosen.name });
   store.setVisitCode(state.visitCode ?? null);
+  store.setFamiliesFlag(state.settings?.families ?? false);
 
   // Экран возвращения показывается только если есть о чём рассказать (§3 ТЗ):
   // пустой отчёт хуже отсутствия отчёта.

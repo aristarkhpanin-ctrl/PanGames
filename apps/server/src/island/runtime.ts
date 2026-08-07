@@ -6,6 +6,12 @@ import {
   commitEffect,
   createStartingVillagers,
   comfortAt,
+  expectingHome,
+  grewUpThisTick,
+  newborn,
+  isChild,
+  BIRTH_EVERY_TICKS,
+  type Expecting,
   FESTIVAL_TICKS,
   nextChapter,
   SHELLS_PER_COMFORT_TICK,
@@ -88,11 +94,19 @@ function averageComfort(island: LiveIsland): number {
   );
   if (homes.length === 0) return 0;
 
+  const children = childrenNear(island);
   let sum = 0;
   for (const home of homes) {
-    sum += comfortAt(home, island.world.buildings, island.world.plants);
+    sum += comfortAt(home, island.world.buildings, island.world.plants, children);
   }
   return sum / homes.length;
+}
+
+/** Где сейчас дети. Уют от ребёнка ходит вместе с ним (§5 ТЗ). */
+function childrenNear(island: LiveIsland): { x: number; z: number }[] {
+  return island.villagers
+    .filter((villager) => isChild(villager, island.tick))
+    .map((villager) => ({ x: villager.position.x, z: villager.position.z }));
 }
 
 type TickListener = (broadcast: TickBroadcast) => void;
@@ -348,7 +362,7 @@ export class IslandRuntime {
     }
 
     // Свободные дома и работы разбираются теми же командами, что и вручную.
-    for (const command of autoAssignments(island.world, island.villagers)) {
+    for (const command of autoAssignments(island.world, island.villagers, { tick: island.tick })) {
       const verdict = validate(command, island.world, island.reader);
       if (!verdict.ok) continue;
 
@@ -367,6 +381,16 @@ export class IslandRuntime {
     const newcomer = this.welcomeNewcomer(island);
     if (newcomer !== null) entries.push(this.chronicle.arrivalEntry(island, newcomer));
 
+    const expecting = this.maybeBorn(island);
+    if (expecting !== null) entries.push(this.chronicle.bornEntry(island, expecting.parents));
+
+    // Взросление не событие, а срок: ребёнок просто перестаёт им быть.
+    for (const villager of island.villagers) {
+      if (grewUpThisTick(villager, island.tick)) {
+        entries.push(this.chronicle.grewUpEntry(island, villager));
+      }
+    }
+
     const chapter = this.advanceChapter(island, entries);
 
     if (entries.length > 0) void this.saveEntries(island.id, entries);
@@ -382,6 +406,35 @@ export class IslandRuntime {
       journal: entries,
       ...(chapter === null ? {} : { chapter }),
     };
+  }
+
+  /**
+   * Ребёнок появляется сам — и только если игрок включил семьи (§5 ТЗ, устав п. 4).
+   *
+   * Ни очереди, ни таймера, ни «условия не выполнены»: не сложилось — не случилось ничего.
+   * Условия читаются как описание хорошей жизни, а не как список требований.
+   */
+  private maybeBorn(island: LiveIsland): Expecting | null {
+    if (!island.settings.families) return null;
+    if (island.villagers.length >= MAX_VILLAGERS) return null;
+    if (island.tick % BIRTH_EVERY_TICKS !== 0) return null;
+
+    const expecting = expectingHome(island.villagers, island.world.buildings, (pos) =>
+      comfortAt(pos, island.world.buildings, island.world.plants, childrenNear(island)),
+    );
+    if (expecting === null) return null;
+
+    const baby = newborn(
+      island.seed + island.tick * 7919 + island.villagers.length,
+      island.id,
+      `villager-${String(island.villagers.length + island.tick)}`,
+      expecting,
+      island.tick,
+    );
+    if (baby === null) return null;
+
+    island.villagers = [...island.villagers, baby];
+    return expecting;
   }
 
   /**

@@ -38,6 +38,8 @@ export type JournalKind =
   | 'chapter'
   | 'quiet_need'
   | 'gift'
+  | 'born'
+  | 'grew_up'
   | 'day';
 
 /** Часть суток, от которой зависит вторая фраза записи. */
@@ -54,6 +56,18 @@ export function dayPartOf(hour: number): DayPart {
 
 /** Главная фраза записи. `{name}` и `{other}` — жители, `{what}` — здание, место или мысль. */
 export const JOURNAL_LINES: Readonly<Record<JournalKind, readonly string[]>> = {
+  born: [
+    '{name} и {other} не отходят от колыбели',
+    '{name} и {other} качают колыбель по очереди',
+    '{name} и {other} говорят тише обычного — в доме спит маленький',
+    '{name} и {other} теперь втроём',
+  ],
+  grew_up: [
+    '{name} больше не малыш',
+    '{name} вырастает незаметно',
+    '{name} с сегодняшнего дня работает наравне со всеми',
+    '{name} уже находит себе дело без подсказки',
+  ],
   built: [
     'Достроили: {what}',
     'На острове появилась новая постройка: {what}',

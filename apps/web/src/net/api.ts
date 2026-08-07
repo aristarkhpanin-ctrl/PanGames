@@ -1,6 +1,7 @@
 import type {
   CatchUpEvent,
   Command,
+  IslandSettings,
   ValidationResult,
   Villager,
   WorldSnapshot,
@@ -27,6 +28,23 @@ export interface IslandBrief {
   seed: number;
 }
 
+/** Меняет настройку острова. Возвращает то, что решил сервер, а не то, что мы просили. */
+export async function setFamilies(id: string, families: boolean): Promise<IslandSettings | null> {
+  try {
+    const response = await fetch(`${serverUrl}/islands/${id}/settings`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ families }),
+    });
+    if (!response.ok) return null;
+    // Приведение, а не проверка: форма ответа наша собственная и описана рядом.
+    return ((await response.json()) as { settings: IslandSettings }).settings;
+  } catch {
+    return null;
+  }
+}
+
 export interface IslandState {
   id: string;
   /** Гостевой снимок: read-only. Строить и копать тут нельзя ничего. */
@@ -34,6 +52,8 @@ export interface IslandState {
   name?: string;
   visitCode?: string;
   chapter?: number;
+  /** Настройки острова. Пока одна — семьи, по умолчанию выключены (§5 ТЗ). */
+  settings?: IslandSettings;
   seed: number;
   tick: number;
   hour: number;

@@ -45,6 +45,7 @@ export * from './sim/aggregate';
 export * from './content/welcome';
 export * from './content/journalTemplates';
 export * from './sim/journal';
+export * from './sim/family';
 export * from './sim/social';
 export * from './sim/festival';
 export * from './sim/trade';

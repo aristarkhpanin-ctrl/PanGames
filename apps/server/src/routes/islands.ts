@@ -169,6 +169,8 @@ export function registerIslandRoutes(
       /** Код для гостей. Показывается владельцу в порту и копируется одной кнопкой. */
       visitCode: row?.visitCode ?? '',
       chapter: island.chapter,
+      /** Настройки острова: пока это только семьи, и по умолчанию они выключены (§5 ТЗ). */
+      settings: island.settings,
       tick: island.tick,
       hour: hourOfTick(island.tick),
       world: toSnapshot(island.world),
@@ -178,6 +180,26 @@ export function registerIslandRoutes(
       // подбирает интерфейс, и он же решает, показывать ли экран возвращения вообще.
       catchUp: runtime.takeCatchUp(island),
     });
+  });
+
+  /**
+   * Настройки острова (§5 ТЗ). Пока настройка ровно одна — семьи, и она выключена
+   * по умолчанию: механика необязательная, и включать её должен человек, а не мы.
+   */
+  app.post('/islands/:id/settings', async (request, reply) => {
+    const params = z.object({ id: z.uuid() }).safeParse(request.params);
+    if (!params.success) return reply.code(404).send({ error: 'Такого острова нет' });
+
+    const found = await ownedIsland(request, params.data.id);
+    if ('error' in found) return reply.code(found.error).send({ error: explain(found.error) });
+
+    const body = z.object({ families: z.boolean() }).safeParse(request.body);
+    if (!body.success) return reply.code(400).send({ error: 'Непонятная настройка' });
+
+    found.island.settings = { families: body.data.families };
+    found.island.dirty = true;
+
+    return reply.send({ settings: found.island.settings });
   });
 
   app.post('/islands/:id/commands', async (request, reply) => {

@@ -385,6 +385,8 @@ export async function createScene(
     }
 
     const alpha = stream.update(delta);
+    // Возраст жителя считается от тика: без него ребёнок рисовался бы взрослым.
+    villagerRenderer.tick = useGameStore.getState().tick;
     villagerRenderer.update(stream.villagers, stream.previousVillagers, alpha, delta);
     const sky = lighting.update(hour, controls.focus);
     water.update(delta, sky);

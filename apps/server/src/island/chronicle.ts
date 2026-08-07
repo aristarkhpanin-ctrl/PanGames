@@ -105,6 +105,24 @@ export class Chronicle {
     ]);
   }
 
+  /** Запись о рождении: двое, у кого появился малыш (§5 ТЗ). */
+  bornEntry(island: LiveIsland, parents: readonly [Villager, Villager]): ChronicleEntry {
+    return this.write(
+      island,
+      'born',
+      hourOfTick(island.tick),
+      { name: first(parents[0].name), other: first(parents[1].name) },
+      [parents[0].id, parents[1].id],
+    );
+  }
+
+  /** Запись о взрослении: ребёнок просто перестал им быть. */
+  grewUpEntry(island: LiveIsland, villager: Villager): ChronicleEntry {
+    return this.write(island, 'grew_up', hourOfTick(island.tick), { name: first(villager.name) }, [
+      villager.id,
+    ]);
+  }
+
   /** Запись о достроенном здании. */
   builtEntry(island: LiveIsland, typeId: string): ChronicleEntry {
     const name = buildingType(typeId)?.name.toLowerCase() ?? 'постройка';

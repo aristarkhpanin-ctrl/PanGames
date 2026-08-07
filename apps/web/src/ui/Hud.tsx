@@ -7,7 +7,7 @@ import { BuildingCard } from './BuildingCard';
 import { ResourceBar } from './ResourceBar';
 import { GiftsWaiting, GuestBar, VisitCode } from './Guests';
 import { Journal } from './Journal';
-import { MuteButton, ScaleButton } from './Settings';
+import { FamiliesToggle, MuteButton, ScaleButton } from './Settings';
 import { SignIn } from './SignIn';
 import { Welcome } from './Welcome';
 import { ChapterTitle } from './ChapterTitle';
@@ -95,6 +95,7 @@ export function Hud(): React.JSX.Element {
         {opening !== '' && <p className="hud-note">{opening}</p>}
         {worldReady && !guest && <ResourceBar />}
         {worldReady && <VisitCode />}
+        {worldReady && <FamiliesToggle />}
       </div>
 
       <div className="hud-top">

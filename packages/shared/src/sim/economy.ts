@@ -5,6 +5,7 @@ import type { PausedReason, ResourceId, Villager } from '../types';
 import { timeOfDayFactor } from './time';
 import { workerEfficiency, WORKER_EFFICIENCY_FLOOR } from './needs';
 import type { ResourceNode } from '../worldgen/scatter';
+import { CHILD_COMFORT, CHILD_COMFORT_RADIUS } from './family';
 
 /**
  * Производство, склад и работы (§4 ТЗ).
@@ -336,6 +337,11 @@ export function comfortAt(
   pos: { x: number; z: number },
   buildings: readonly PlacedBuilding[],
   plants: readonly { x: number; z: number }[],
+  /**
+   * Дети, которые сейчас поблизости (§5 ТЗ). Отдельным списком, а не через здания:
+   * уют от ребёнка — это не свойство места, а то, что он приносит туда, где сейчас есть.
+   */
+  children: readonly { x: number; z: number }[] = [],
 ): number {
   let comfort = 0;
 
@@ -353,6 +359,14 @@ export function comfortAt(
   for (const plant of plants) {
     const distance = Math.hypot(plant.x - pos.x, plant.z - pos.z);
     if (distance <= PLANT_COMFORT_RADIUS) comfort += 0.5 * (1 - distance / PLANT_COMFORT_RADIUS);
+  }
+
+  // И дети, если они рядом (§5 ТЗ). Список приходит снаружи: экономика не знает про возраст.
+  for (const child of children) {
+    const distance = Math.hypot(child.x - pos.x, child.z - pos.z);
+    if (distance <= CHILD_COMFORT_RADIUS) {
+      comfort += CHILD_COMFORT * (1 - distance / CHILD_COMFORT_RADIUS);
+    }
   }
 
   return comfort;

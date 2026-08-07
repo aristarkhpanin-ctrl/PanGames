@@ -49,6 +49,13 @@ interface GameState {
   visitCode: string | null;
   setVisitCode: (code: string | null) => void;
 
+  /**
+   * Настройки острова. Семьи по умолчанию выключены (§5 ТЗ): механика необязательная,
+   * и включать её должен человек.
+   */
+  families: boolean;
+  setFamiliesFlag: (families: boolean) => void;
+
   /** Остров сгенерирован и все чанки отрисованы. */
   worldReady: boolean;
   setWorldReady: (ready: boolean) => void;
@@ -240,6 +247,11 @@ export const useGameStore = create<GameState>()((set) => ({
   visitCode: null,
   setVisitCode: (visitCode) => {
     set({ visitCode });
+  },
+
+  families: false,
+  setFamiliesFlag: (families) => {
+    set({ families });
   },
 
   worldReady: false,

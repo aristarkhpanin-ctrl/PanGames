@@ -1,4 +1,12 @@
-import { VOXEL_SIZE, villagerLook, type AgentState, type Villager } from '@gavan/shared';
+import {
+  CHILD_DAYS,
+  clamp,
+  daysToGrowUp,
+  VOXEL_SIZE,
+  villagerLook,
+  type AgentState,
+  type Villager,
+} from '@gavan/shared';
 import * as THREE from 'three';
 
 /**
@@ -65,10 +73,16 @@ function poseFor(state: AgentState): Pose {
   }
 }
 
+/** Каким ребёнок рождается по отношению к взрослому росту. */
+const CHILD_SIZE = 0.58;
+
 export class VillagerRenderer {
   readonly group = new THREE.Group();
   private readonly meshes = new Map<string, THREE.InstancedMesh>();
   private phase = 0;
+
+  /** Текущий тик: по нему считается, кто ещё ребёнок и насколько подрос. */
+  tick = 0;
 
   constructor() {
     for (const part of PARTS) {
@@ -124,6 +138,16 @@ export class VillagerRenderer {
 
       const look = villagerLook(villager.seed);
       const pose = poseFor(villager.state);
+
+      /*
+       * Ребёнок меньше взрослого — и это весь его отдельный рендер (§5 ТЗ).
+       *
+       * Отдельной модели у него нет намеренно: он такой же человек, просто пока небольшой.
+       * Рост подтягивается к взрослому по мере взросления, поэтому день, когда ребёнок
+       * стал взрослым, не выглядит скачком.
+       */
+      const grown = 1 - daysToGrowUp(villager, this.tick) / CHILD_DAYS;
+      const size = look.height * (CHILD_SIZE + (1 - CHILD_SIZE) * clamp(grown, 0, 1));
       const step = moving ? Math.sin(this.phase + (villager.seed % 6)) : 0;
 
       const groundY = (y - 1) * VOXEL_SIZE + VOXEL_SIZE;
@@ -139,7 +163,7 @@ export class VillagerRenderer {
 
         // Руки и ноги качаются вдоль движения; всё остальное едет вместе с корпусом.
         const localZ = oz + swing * 0.22;
-        const localY = oy * look.height + pose.lift + (pose.lying ? -oy * look.height * 0.55 : 0);
+        const localY = oy * size + pose.lift + (pose.lying ? -oy * size * 0.55 : 0);
 
         position.set(rootX, groundY + localY, rootZ);
         // Смещение по бокам и вперёд считаем в системе координат жителя.
@@ -157,7 +181,7 @@ export class VillagerRenderer {
           quaternion.multiply(tilt);
         }
 
-        scale.set(1, look.height, 1);
+        scale.set(1, size, 1);
         matrix.compose(position, quaternion, scale);
         mesh.setMatrixAt(index, matrix);
 
